@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import time
+from contextlib import suppress
 from typing import Any
 
 import pg8000
@@ -20,8 +21,11 @@ config = load_private_config(os.environ.get("AWSOPS_CONFIG", "data/config.json")
 limits = RuntimeLimits(config.agent)
 audit = AuditLogger()
 
+MAX_STEAMPIPE_ROWS = 1000
+
 
 def _select_only(sql: str) -> None:
+    # Scaffold guard only; pair this with read-only Steampipe/Postgres credentials.
     first = sql.strip().split(None, 1)[0].lower() if sql.strip() else ""
     if first != "select":
         raise ValueError("Only SELECT statements are allowed")
@@ -30,6 +34,19 @@ def _select_only(sql: str) -> None:
     found = sorted(blocked & tokens)
     if found:
         raise ValueError(f"Blocked SQL keyword: {found[0]}")
+
+
+def _validate_max_rows(max_rows: int) -> None:
+    if not isinstance(max_rows, int) or isinstance(max_rows, bool):
+        raise ValueError("max_rows must be an integer")
+    if max_rows < 1 or max_rows > MAX_STEAMPIPE_ROWS:
+        raise ValueError(f"max_rows must be between 1 and {MAX_STEAMPIPE_ROWS}")
+
+
+def _validate_result_size(result: dict[str, Any]) -> None:
+    encoded = json.dumps(result, ensure_ascii=False).encode("utf-8")
+    if len(encoded) > config.agent.max_tool_result_bytes:
+        raise ValueError("Tool result exceeds max_tool_result_bytes")
 
 
 def _steampipe_connection():
@@ -59,16 +76,27 @@ async def run_steampipe_query(sql: str, max_rows: int = 100) -> dict[str, Any]:
     status = "success"
     try:
         _select_only(sql)
+        _validate_max_rows(max_rows)
         async with limits.steampipe:
             def run_query():
-                conn = _steampipe_connection()
-                cur = conn.cursor()
-                cur.execute(sql)
-                columns = [item[0] for item in cur.description] if cur.description else []
-                rows = [dict(zip(columns, row)) for row in cur.fetchmany(max_rows)]
-                cur.close()
-                conn.close()
-                return {"columns": columns, "rows": rows, "rowCount": len(rows)}
+                conn = None
+                cur = None
+                try:
+                    conn = _steampipe_connection()
+                    cur = conn.cursor()
+                    cur.execute(sql)
+                    columns = [item[0] for item in cur.description] if cur.description else []
+                    rows = [dict(zip(columns, row)) for row in cur.fetchmany(max_rows)]
+                    result = {"columns": columns, "rows": rows, "rowCount": len(rows)}
+                    _validate_result_size(result)
+                    return result
+                finally:
+                    if cur is not None:
+                        with suppress(Exception):
+                            cur.close()
+                    if conn is not None:
+                        with suppress(Exception):
+                            conn.close()
 
             return await asyncio.to_thread(run_query)
     except Exception:
