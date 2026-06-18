@@ -29,6 +29,11 @@ fi
 echo "[private-agent] starting MCP server on stdio is handled by LangGraph in later phases"
 echo "[private-agent] starting LangGraph API on ${LANGGRAPH_API_URL}"
 
+if [ "${SKIP_PRIVATE_AGENT_PIP_INSTALL:-false}" != "true" ]; then
+  echo "[private-agent] installing Python dependencies from agent/requirements-private.txt"
+  python3 -m pip install -r agent/requirements-private.txt
+fi
+
 nohup python3 -m uvicorn agent.langgraph_api:app \
   --host "$LANGGRAPH_HOST" \
   --port "$LANGGRAPH_PORT" \

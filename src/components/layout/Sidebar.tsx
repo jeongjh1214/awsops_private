@@ -131,6 +131,7 @@ export default function Sidebar() {
   const [customerLogo, setCustomerLogo] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [customerLogoBg, setCustomerLogoBg] = useState<string>('dark'); // 'light' for white bg, 'dark' for transparent / 밝은 로고는 light, 어두운 로고는 dark
+  const [agentProvider, setAgentProvider] = useState<string>('agentcore');
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
   const { getFeatures, isMultiAccount } = useAccountContext();
   const features = getFeatures();
@@ -143,6 +144,7 @@ export default function Sidebar() {
         if (d.customerLogo) setCustomerLogo(d.customerLogo);
         if (d.customerName) setCustomerName(d.customerName);
         if (d.customerLogoBg) setCustomerLogoBg(d.customerLogoBg);
+        if (d.agent?.provider) setAgentProvider(d.agent.provider);
       })
       .catch(() => {});
   }, []);
@@ -306,6 +308,9 @@ export default function Sidebar() {
                   // Cost items: show if global costEnabled AND (single-account OR account has cost)
                   if (item.href === '/cost' || item.href === '/container-cost' || item.href === '/eks-container-cost') {
                     return costEnabled && (!isMultiAccount || features.costEnabled);
+                  }
+                  if (item.href === '/agentcore') {
+                    return agentProvider !== 'local-mcp-langgraph';
                   }
                   // K8s items: show if single-account OR account has EKS
                   if (item.href.startsWith('/k8s')) {

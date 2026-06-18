@@ -6,7 +6,7 @@ import {
   StopCodeInterpreterSessionCommand,
 } from '@aws-sdk/client-bedrock-agentcore';
 
-import { getConfig } from '@/lib/app-config';
+import { getConfig, isLocalPrivateAgentEnabled } from '@/lib/app-config';
 
 const CODE_INTERPRETER_REGION = 'ap-northeast-2';
 
@@ -24,6 +24,16 @@ const client = new BedrockAgentCoreClient({ region: CODE_INTERPRETER_REGION });
  * Response: { output: string, exitCode: number }
  */
 export async function POST(request: NextRequest) {
+  if (isLocalPrivateAgentEnabled()) {
+    return NextResponse.json(
+      {
+        error: 'AgentCore Code Interpreter is disabled while the local private agent provider is active.',
+        provider: 'local-mcp-langgraph',
+      },
+      { status: 404 }
+    );
+  }
+
   let sessionId: string | undefined;
 
   try {

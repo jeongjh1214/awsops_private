@@ -168,6 +168,10 @@ export function getConfig(): AppConfig {
   }
 }
 
+export function isLocalPrivateAgentEnabled(): boolean {
+  return getConfig().agent?.provider === 'local-mcp-langgraph';
+}
+
 export function saveConfig(config: Partial<AppConfig>): void {
   const current = getConfig();
   const merged = { ...current, ...config };

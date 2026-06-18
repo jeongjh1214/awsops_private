@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFileSync } from 'child_process';
 import NodeCache from 'node-cache';
-import { getConfig } from '@/lib/app-config';
+import { getConfig, isLocalPrivateAgentEnabled } from '@/lib/app-config';
 import { getStats } from '@/lib/agentcore-stats';
 import { getConversations, searchConversations, getMemoryStats } from '@/lib/agentcore-memory';
 import { getUserFromRequest } from '@/lib/auth-utils';
@@ -92,6 +92,17 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
   const bustCache = searchParams.get('bustCache') === 'true';
+
+  if (isLocalPrivateAgentEnabled()) {
+    return NextResponse.json(
+      {
+        disabled: true,
+        provider: 'local-mcp-langgraph',
+        message: 'AgentCore is disabled while the local private agent provider is active.',
+      },
+      { status: 404 }
+    );
+  }
 
   // 통계 조회 / Stats query
   if (action === 'stats') {
