@@ -17,6 +17,19 @@ class EndpointResolverTests(unittest.TestCase):
 
         self.assertEqual(resolver.url_for("sts"), "https://vpce-sts.example")
 
+    def test_explicit_mode_fails_when_url_missing(self):
+        env = EnvironmentConfig(
+            network_mode="external-explicit-vpce",
+            endpoint_mode="explicit",
+            bedrock_profile="bedrock-dev",
+            endpoint_urls={},
+            required_endpoints=["sts"],
+        )
+        resolver = EndpointResolver(env)
+
+        with self.assertRaisesRegex(ValueError, "Missing explicit endpoint URL for sts"):
+            resolver.url_for("sts")
+
     def test_private_dns_returns_none(self):
         env = EnvironmentConfig(
             network_mode="vpc-private-dns",

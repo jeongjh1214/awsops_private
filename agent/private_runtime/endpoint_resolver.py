@@ -11,6 +11,8 @@ class EndpointResolver:
         mode = self.environment.endpoint_mode
         configured = self.environment.endpoint_urls.get(service)
         if mode == "explicit":
+            if not configured:
+                raise ValueError(f"Missing explicit endpoint URL for {service}")
             return configured
         if mode == "hybrid" and configured:
             return configured
