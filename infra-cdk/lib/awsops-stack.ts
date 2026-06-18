@@ -13,7 +13,7 @@ import { Construct } from 'constructs';
 export class AwsopsStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
   public readonly alb: elbv2.ApplicationLoadBalancer;
-  public readonly distribution: cloudfront.Distribution;
+  public readonly distribution?: cloudfront.Distribution;
   public readonly instance: ec2.Instance;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -43,8 +43,15 @@ export class AwsopsStack extends cdk.Stack {
 
     const cloudFrontPrefixListId = new cdk.CfnParameter(this, 'CloudFrontPrefixListId', {
       type: 'String',
+      default: '',
       description: 'CloudFront origin-facing managed prefix list ID (pl-22a6434b for ap-northeast-2)',
     });
+
+    const privateMode = this.node.tryGetContext('privateMode') === 'true';
+    const internalAlbCidrs = ((this.node.tryGetContext('internalAlbCidrs') as string) || '')
+      .split(',')
+      .map(c => c.trim())
+      .filter(Boolean);
 
     // 기존 VPC ID (빈 값이면 새 VPC 생성) / Existing VPC ID (empty = create new VPC)
     const existingVpcId = new cdk.CfnParameter(this, 'ExistingVpcId', {
@@ -129,23 +136,32 @@ export class AwsopsStack extends cdk.Stack {
     // Security Groups
     // -------------------------------------------------------
 
-    // ALB SG: CloudFront에서만 접근 허용 / Allow from CloudFront only
+    // ALB SG: CloudFront or internal CIDR access only
     const albSg = new ec2.SecurityGroup(this, 'ALBSecurityGroup', {
       vpc: this.vpc,
       securityGroupName: 'awsops-alb-sg',
-      description: 'AWSops ALB SG - CloudFront origin-facing only',
+      description: 'AWSops ALB SG - CloudFront or internal dashboard access',
       allowAllOutbound: true,
     });
-    // Use single port range (80-3000) to stay within SG rules limit
-    // CloudFront prefix list has 120+ entries; each entry counts as 1 rule
-    new ec2.CfnSecurityGroupIngress(this, 'ALBIngressFromCloudFront', {
-      groupId: albSg.securityGroupId,
-      ipProtocol: 'tcp',
-      fromPort: 80,
-      toPort: 3000,
-      sourcePrefixListId: cloudFrontPrefixListId.valueAsString,
-      description: 'HTTP/Dashboard ports from CloudFront origin-facing',
-    });
+    if (privateMode) {
+      if (internalAlbCidrs.length === 0) {
+        throw new Error('privateMode=true requires -c internalAlbCidrs=CIDR1,CIDR2');
+      }
+      internalAlbCidrs.forEach((cidr, idx) => {
+        albSg.addIngressRule(ec2.Peer.ipv4(cidr), ec2.Port.tcp(3000), `Dashboard from internal CIDR ${idx + 1}`);
+      });
+    } else {
+      // Use single port range (80-3000) to stay within SG rules limit
+      // CloudFront prefix list has 120+ entries; each entry counts as 1 rule
+      new ec2.CfnSecurityGroupIngress(this, 'ALBIngressFromCloudFront', {
+        groupId: albSg.securityGroupId,
+        ipProtocol: 'tcp',
+        fromPort: 80,
+        toPort: 3000,
+        sourcePrefixListId: cloudFrontPrefixListId.valueAsString,
+        description: 'HTTP/Dashboard ports from CloudFront origin-facing',
+      });
+    }
 
     // EC2 SG: ALB에서만 접근 허용 / Allow from ALB only
     const ec2Sg = new ec2.SecurityGroup(this, 'EC2SecurityGroup', {
@@ -158,12 +174,11 @@ export class AwsopsStack extends cdk.Stack {
     ec2Sg.addIngressRule(albSg, ec2.Port.tcp(3000), 'Dashboard from ALB');
 
     // -------------------------------------------------------
-    // SSM VPC Endpoints: skipVpcEndpoints=true이면 건너뜀
-    // SSM VPC Endpoints: skip if context skipVpcEndpoints=true
+    // SSM VPC Endpoints: skip in private mode or if context skipVpcEndpoints=true
     // 00-deploy-infra.sh에서 기존 VPC의 endpoint 존재 여부를 확인 후 context 전달
     // The deploy script checks if endpoints already exist and passes context
     // -------------------------------------------------------
-    if (this.node.tryGetContext('skipVpcEndpoints') !== 'true') {
+    if (!privateMode && this.node.tryGetContext('skipVpcEndpoints') !== 'true') {
       const ssmSg = new ec2.SecurityGroup(this, 'SSMSecurityGroup', {
         vpc: this.vpc,
         description: 'SSM VPC Endpoints SG - HTTPS from VPC CIDR',
@@ -400,12 +415,12 @@ export class AwsopsStack extends cdk.Stack {
     cdk.Tags.of(this.instance).add('UserDataVersion', '2');
 
     // -------------------------------------------------------
-    // Application Load Balancer (Internet-facing)
+    // Application Load Balancer
     // -------------------------------------------------------
     this.alb = new elbv2.ApplicationLoadBalancer(this, 'PublicALB', {
       loadBalancerName: 'awsops-alb',
       vpc: this.vpc,
-      internetFacing: true,
+      internetFacing: !privateMode,
       securityGroup: albSg,
       idleTimeout: cdk.Duration.seconds(3600),
     });
@@ -451,17 +466,6 @@ export class AwsopsStack extends cdk.Stack {
       action: elbv2.ListenerAction.forward([vscodeTg]),
     });
 
-    // Port 3000 Listener (Dashboard) with custom header validation
-    const listener3000 = this.alb.addListener('Listener3000', {
-      port: 3000,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      open: false,
-      defaultAction: elbv2.ListenerAction.fixedResponse(403, {
-        contentType: 'text/plain',
-        messageBody: 'Access Denied',
-      }),
-    });
-
     const dashboardTg = new elbv2.ApplicationTargetGroup(this, 'DashboardTargetGroup', {
       vpc: this.vpc,
       port: 3000,
@@ -480,112 +484,128 @@ export class AwsopsStack extends cdk.Stack {
     });
     dashboardTg.addTarget(new elbv2_targets.InstanceTarget(this.instance, 3000));
 
-    listener3000.addAction('DashboardRule', {
-      priority: 1,
-      conditions: [
-        elbv2.ListenerCondition.httpHeader('X-Custom-Secret', [customSecret]),
-      ],
-      action: elbv2.ListenerAction.forward([dashboardTg]),
+    // Port 3000 Listener (Dashboard): CloudFront header in public mode, direct internal forwarding in private mode
+    const listener3000 = this.alb.addListener('Listener3000', {
+      port: 3000,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      open: false,
+      defaultAction: privateMode
+        ? elbv2.ListenerAction.forward([dashboardTg])
+        : elbv2.ListenerAction.fixedResponse(403, {
+          contentType: 'text/plain',
+          messageBody: 'Access Denied',
+        }),
     });
 
-    // Allow ALB SG ingress on port 3000 (already added via CfnSecurityGroupIngress above)
+    if (!privateMode) {
+      listener3000.addAction('DashboardRule', {
+        priority: 1,
+        conditions: [
+          elbv2.ListenerCondition.httpHeader('X-Custom-Secret', [customSecret]),
+        ],
+        action: elbv2.ListenerAction.forward([dashboardTg]),
+      });
+    }
 
     // -------------------------------------------------------
     // CloudFront Distribution
     // -------------------------------------------------------
-    const albOriginVSCode = new origins.HttpOrigin(this.alb.loadBalancerDnsName, {
-      httpPort: 80,
-      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-      readTimeout: cdk.Duration.seconds(60),
-      customHeaders: {
-        'X-Custom-Secret': customSecret,
-      },
-    });
-
-    const albOriginDashboard = new origins.HttpOrigin(this.alb.loadBalancerDnsName, {
-      httpPort: 3000,
-      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-      readTimeout: cdk.Duration.seconds(60),
-      customHeaders: {
-        'X-Custom-Secret': customSecret,
-      },
-    });
-
-    // Cache policy: no caching (use managed CachingDisabled policy)
-    const noCachePolicy = cloudfront.CachePolicy.CACHING_DISABLED;
-
-    // Origin request policy: forward all viewer headers, cookies, query strings
-    const allViewerOriginPolicy = cloudfront.OriginRequestPolicy.ALL_VIEWER;
-
-    // -------------------------------------------------------
-    // Custom Domain (optional, via CDK context)
-    // Usage: cdk deploy -c customDomain=awsops.example.com
-    // Optionally: -c hostedZoneName=example.com
-    // -------------------------------------------------------
     const customDomain = this.node.tryGetContext('customDomain') as string | undefined;
-    const hostedZoneNameCtx = this.node.tryGetContext('hostedZoneName') as string | undefined;
 
-    let domainProps: { domainNames?: string[]; certificate?: acm.ICertificate } = {};
-    let hostedZone: route53.IHostedZone | undefined;
-
-    if (customDomain) {
-      // Derive hosted zone name from domain (e.g., 'awsops.atomai.click' → 'atomai.click')
-      const zoneName = hostedZoneNameCtx || customDomain.split('.').slice(-2).join('.');
-      hostedZone = route53.HostedZone.fromLookup(this, 'HostedZone', {
-        domainName: zoneName,
+    if (!privateMode) {
+      const albOriginVSCode = new origins.HttpOrigin(this.alb.loadBalancerDnsName, {
+        httpPort: 80,
+        protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+        readTimeout: cdk.Duration.seconds(60),
+        customHeaders: {
+          'X-Custom-Secret': customSecret,
+        },
       });
 
-      // ACM certificate in us-east-1 (required for CloudFront)
-      const certificate = new acm.DnsValidatedCertificate(this, 'Certificate', {
-        domainName: customDomain,
-        hostedZone,
-        region: 'us-east-1',
+      const albOriginDashboard = new origins.HttpOrigin(this.alb.loadBalancerDnsName, {
+        httpPort: 3000,
+        protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+        readTimeout: cdk.Duration.seconds(60),
+        customHeaders: {
+          'X-Custom-Secret': customSecret,
+        },
       });
 
-      domainProps = {
-        domainNames: [customDomain],
-        certificate,
-      };
-    }
+      // Cache policy: no caching (use managed CachingDisabled policy)
+      const noCachePolicy = cloudfront.CachePolicy.CACHING_DISABLED;
 
-    this.distribution = new cloudfront.Distribution(this, 'CloudFrontDistribution', {
-      ...domainProps,
-      comment: `AWSops Dashboard distribution for ${this.stackName}`,
-      defaultBehavior: {
-        origin: albOriginVSCode,
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-        cachePolicy: noCachePolicy,
-        originRequestPolicy: allViewerOriginPolicy,
-      },
-      additionalBehaviors: {
-        '/awsops*': {
-          origin: albOriginDashboard,
+      // Origin request policy: forward all viewer headers, cookies, query strings
+      const allViewerOriginPolicy = cloudfront.OriginRequestPolicy.ALL_VIEWER;
+
+      // -------------------------------------------------------
+      // Custom Domain (optional, via CDK context)
+      // Usage: cdk deploy -c customDomain=awsops.example.com
+      // Optionally: -c hostedZoneName=example.com
+      // -------------------------------------------------------
+      const hostedZoneNameCtx = this.node.tryGetContext('hostedZoneName') as string | undefined;
+
+      let domainProps: { domainNames?: string[]; certificate?: acm.ICertificate } = {};
+      let hostedZone: route53.IHostedZone | undefined;
+
+      if (customDomain) {
+        // Derive hosted zone name from domain (e.g., 'awsops.atomai.click' -> 'atomai.click')
+        const zoneName = hostedZoneNameCtx || customDomain.split('.').slice(-2).join('.');
+        hostedZone = route53.HostedZone.fromLookup(this, 'HostedZone', {
+          domainName: zoneName,
+        });
+
+        // ACM certificate in us-east-1 (required for CloudFront)
+        const certificate = new acm.DnsValidatedCertificate(this, 'Certificate', {
+          domainName: customDomain,
+          hostedZone,
+          region: 'us-east-1',
+        });
+
+        domainProps = {
+          domainNames: [customDomain],
+          certificate,
+        };
+      }
+
+      this.distribution = new cloudfront.Distribution(this, 'CloudFrontDistribution', {
+        ...domainProps,
+        comment: `AWSops Dashboard distribution for ${this.stackName}`,
+        defaultBehavior: {
+          origin: albOriginVSCode,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: noCachePolicy,
           originRequestPolicy: allViewerOriginPolicy,
         },
-        '/awsops/_next/*': {
-          origin: albOriginDashboard,
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
-          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        additionalBehaviors: {
+          '/awsops*': {
+            origin: albOriginDashboard,
+            viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+            cachePolicy: noCachePolicy,
+            originRequestPolicy: allViewerOriginPolicy,
+          },
+          '/awsops/_next/*': {
+            origin: albOriginDashboard,
+            viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+            cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          },
         },
-      },
-      priceClass: cloudfront.PriceClass.PRICE_CLASS_ALL,
-    });
-    cdk.Tags.of(this.distribution).add('Name', `${this.stackName}-CloudFront`);
-
-    // Route 53 A record (alias) pointing custom domain to CloudFront
-    if (customDomain && hostedZone) {
-      new route53.ARecord(this, 'DomainARecord', {
-        zone: hostedZone,
-        recordName: customDomain,
-        target: route53.RecordTarget.fromAlias(
-          new route53targets.CloudFrontTarget(this.distribution),
-        ),
+        priceClass: cloudfront.PriceClass.PRICE_CLASS_ALL,
       });
+      cdk.Tags.of(this.distribution).add('Name', `${this.stackName}-CloudFront`);
+
+      // Route 53 A record (alias) pointing custom domain to CloudFront
+      if (customDomain && hostedZone) {
+        new route53.ARecord(this, 'DomainARecord', {
+          zone: hostedZone,
+          recordName: customDomain,
+          target: route53.RecordTarget.fromAlias(
+            new route53targets.CloudFrontTarget(this.distribution),
+          ),
+        });
+      }
     }
 
     // -------------------------------------------------------
@@ -597,19 +617,28 @@ export class AwsopsStack extends cdk.Stack {
       exportName: `${this.stackName}-VPC-ID`,
     });
 
-    new cdk.CfnOutput(this, 'CloudFrontURL', {
-      value: customDomain
-        ? `https://${customDomain}`
-        : `https://${this.distribution.distributionDomainName}`,
-      description: 'CloudFront Distribution URL',
-      exportName: `${this.stackName}-CloudFront-URL`,
-    });
+    if (this.distribution) {
+      new cdk.CfnOutput(this, 'CloudFrontURL', {
+        value: customDomain
+          ? `https://${customDomain}`
+          : `https://${this.distribution.distributionDomainName}`,
+        description: 'CloudFront Distribution URL',
+        exportName: `${this.stackName}-CloudFront-URL`,
+      });
+    }
 
-    new cdk.CfnOutput(this, 'PublicALBEndpoint', {
-      value: `http://${this.alb.loadBalancerDnsName}`,
-      description: 'Public ALB DNS Name (direct access denied - use CloudFront)',
-      exportName: `${this.stackName}-Public-ALB-DNS`,
-    });
+    if (privateMode) {
+      new cdk.CfnOutput(this, 'InternalALBEndpoint', {
+        value: `http://${this.alb.loadBalancerDnsName}:3000/awsops`,
+        description: 'Internal ALB dashboard URL',
+      });
+    } else {
+      new cdk.CfnOutput(this, 'PublicALBEndpoint', {
+        value: `http://${this.alb.loadBalancerDnsName}`,
+        description: 'Public ALB DNS Name (direct access denied - use CloudFront)',
+        exportName: `${this.stackName}-Public-ALB-DNS`,
+      });
+    }
 
     new cdk.CfnOutput(this, 'InstanceId', {
       value: this.instance.instanceId,

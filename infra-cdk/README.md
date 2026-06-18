@@ -16,7 +16,7 @@ AWSops 대시보드 CloudFormation 인프라를 CDK로 재구성한 프로젝트
 - Node.js 20+
 - AWS CDK CLI: `npm install -g aws-cdk`
 - AWS 자격 증명 설정 완료 (AWS credentials configured)
-- 해당 리전의 CloudFront 접두사 목록 ID (CloudFront prefix list ID for your region)
+- 해당 리전의 CloudFront 접두사 목록 ID (CloudFront prefix list ID for public deployments)
 
 ## 빠른 시작 / Quick Start
 
@@ -44,7 +44,20 @@ cdk deploy --all \
 |-----------|---------|-------------|
 | `InstanceType` | `t4g.2xlarge` | EC2 instance type (ARM64 Graviton) |
 | `VSCodePassword` | (required) | code-server password (min 8 chars) |
-| `CloudFrontPrefixListId` | (required) | CloudFront prefix list for ALB SG |
+| `CloudFrontPrefixListId` | `''` | CloudFront prefix list for ALB SG (required for public mode) |
+
+## Private/Internal Deployment
+
+For internal Direct Connect access without CloudFront or Cognito:
+
+```bash
+cdk deploy AwsopsStack \
+  -c privateMode=true \
+  -c internalAlbCidrs=10.0.0.0/8,172.16.0.0/12 \
+  --parameters AwsopsStack:VSCodePassword=YOUR_PASSWORD
+```
+
+Private mode creates an internal ALB and skips CloudFront/Cognito, AgentCore, and SSM VPC endpoint creation. It does not create service VPC endpoints; configure existing endpoints in `data/config.json`.
 
 ## 아키텍처 / Architecture
 

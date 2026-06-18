@@ -6,6 +6,7 @@ import { CognitoStack } from '../lib/cognito-stack';
 import { AgentCoreStack } from '../lib/agentcore-stack';
 
 const app = new cdk.App();
+const privateMode = app.node.tryGetContext('privateMode') === 'true';
 
 const env = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
@@ -21,21 +22,25 @@ const infra = new AwsopsStack(app, 'AwsopsStack', {
 // Custom domain (optional): cdk deploy -c customDomain=awsops.example.com
 const customDomain = app.node.tryGetContext('customDomain') as string | undefined;
 
-// Cognito authentication stack: User Pool, Lambda@Edge, CloudFront integration
-const cognito = new CognitoStack(app, 'AwsopsCognitoStack', {
-  env: { account: env.account, region: 'us-east-1' }, // Lambda@Edge must be in us-east-1
-  crossRegionReferences: true,
-  description: 'AWSops Dashboard - Cognito authentication with Lambda@Edge',
-  distribution: infra.distribution,
-  customDomain,
-});
-cognito.addDependency(infra);
+if (!privateMode && infra.distribution) {
+  // Cognito authentication stack: User Pool, Lambda@Edge, CloudFront integration
+  const cognito = new CognitoStack(app, 'AwsopsCognitoStack', {
+    env: { account: env.account, region: 'us-east-1' }, // Lambda@Edge must be in us-east-1
+    crossRegionReferences: true,
+    description: 'AWSops Dashboard - Cognito authentication with Lambda@Edge',
+    distribution: infra.distribution,
+    customDomain,
+  });
+  cognito.addDependency(infra);
+}
 
-// AgentCore AI stack (placeholder)
-const agentCore = new AgentCoreStack(app, 'AwsopsAgentCoreStack', {
-  env,
-  description: 'AWSops Dashboard - Bedrock AgentCore Runtime and Gateway',
-});
-agentCore.addDependency(infra);
+if (!privateMode) {
+  // AgentCore AI stack (placeholder)
+  const agentCore = new AgentCoreStack(app, 'AwsopsAgentCoreStack', {
+    env,
+    description: 'AWSops Dashboard - Bedrock AgentCore Runtime and Gateway',
+  });
+  agentCore.addDependency(infra);
+}
 
 app.synth();
