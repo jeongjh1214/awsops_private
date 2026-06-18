@@ -29,6 +29,31 @@ export interface AccountConfig {
   profile?: string;        // AWS CLI profile for cross-account access
 }
 
+export type EndpointMode = 'explicit' | 'privateDns' | 'hybrid';
+export type NetworkMode = 'external-explicit-vpce' | 'vpc-private-dns' | 'vpc-hybrid';
+
+export interface PrivateEnvironmentConfig {
+  networkMode: NetworkMode;
+  endpointMode: EndpointMode;
+  bedrockProfile: string;
+  endpointUrls?: Record<string, string>;
+  requiredEndpoints?: string[];
+  awsProfile?: string;
+}
+
+export interface PrivateAgentConfig {
+  provider: 'agentcore' | 'local-mcp-langgraph';
+  modelId: string;
+  langgraphApiUrl?: string;
+  mcpServerUrl?: string;
+  maxConcurrentBedrockCalls: number;
+  maxConcurrentAwsCalls: number;
+  maxConcurrentSteampipeQueries: number;
+  toolTimeoutMs: number;
+  queryCacheTtlSec: number;
+  maxToolResultBytes: number;
+}
+
 // External datasource types (Grafana-style) / 외부 데이터소스 타입 (Grafana 스타일)
 export type DatasourceType = 'prometheus' | 'loki' | 'tempo' | 'clickhouse' | 'jaeger' | 'dynatrace' | 'datadog';
 
@@ -75,6 +100,9 @@ export interface AppConfig {
   adminEmails?: string[];      // Admin user emails allowed to access /accounts / 계정 관리 접근 허용 이메일
   reportBucket?: string;       // S3 bucket for diagnosis reports / 진단 리포트 S3 버킷
   accounts?: AccountConfig[];
+  activeEnvironment?: string;
+  environments?: Record<string, PrivateEnvironmentConfig>;
+  agent?: PrivateAgentConfig;
   datasources?: DatasourceConfig[];  // External datasources / 외부 데이터소스
   datasourceAllowedNetworks?: string[];  // Allowed private CIDRs/hostnames for datasource SSRF allowlist
   snsTopicArn?: string;               // SNS topic ARN for email notifications / 이메일 알림용 SNS 토픽 ARN
@@ -89,6 +117,35 @@ const DEFAULT_CONFIG: AppConfig = {
     vcpuPerHour: 0.04048,
     gbMemPerHour: 0.004445,
     storagePerGbHour: 0.000111,
+  },
+  activeEnvironment: 'dev',
+  environments: {
+    dev: {
+      networkMode: 'external-explicit-vpce',
+      endpointMode: 'explicit',
+      bedrockProfile: '',
+      endpointUrls: {},
+      requiredEndpoints: ['bedrock-runtime', 'sts'],
+    },
+    prod: {
+      networkMode: 'vpc-private-dns',
+      endpointMode: 'privateDns',
+      bedrockProfile: '',
+      endpointUrls: {},
+      requiredEndpoints: ['bedrock-runtime', 'sts'],
+    },
+  },
+  agent: {
+    provider: 'agentcore',
+    modelId: 'anthropic.claude-sonnet-4-6',
+    langgraphApiUrl: 'http://127.0.0.1:7000',
+    mcpServerUrl: 'http://127.0.0.1:7100',
+    maxConcurrentBedrockCalls: 3,
+    maxConcurrentAwsCalls: 8,
+    maxConcurrentSteampipeQueries: 5,
+    toolTimeoutMs: 30000,
+    queryCacheTtlSec: 300,
+    maxToolResultBytes: 200000,
   },
 };
 
