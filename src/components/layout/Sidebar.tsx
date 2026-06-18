@@ -131,7 +131,7 @@ export default function Sidebar() {
   const [customerLogo, setCustomerLogo] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [customerLogoBg, setCustomerLogoBg] = useState<string>('dark'); // 'light' for white bg, 'dark' for transparent / 밝은 로고는 light, 어두운 로고는 dark
-  const [agentProvider, setAgentProvider] = useState<string>('agentcore');
+  const [agentProvider, setAgentProvider] = useState<string | null>(null);
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
   const { getFeatures, isMultiAccount } = useAccountContext();
   const features = getFeatures();
@@ -310,7 +310,10 @@ export default function Sidebar() {
                     return costEnabled && (!isMultiAccount || features.costEnabled);
                   }
                   if (item.href === '/agentcore') {
-                    return agentProvider !== 'local-mcp-langgraph';
+                    return agentProvider !== null && agentProvider !== 'local-mcp-langgraph';
+                  }
+                  if (item.href === '/cloudfront-cdn') {
+                    return agentProvider !== null && agentProvider !== 'local-mcp-langgraph';
                   }
                   // K8s items: show if single-account OR account has EKS
                   if (item.href.startsWith('/k8s')) {

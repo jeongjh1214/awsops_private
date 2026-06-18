@@ -45,6 +45,7 @@ export default function AIPage() {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [historyData, setHistoryData] = useState<any[]>([]);
+  const [agentProvider, setAgentProvider] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('');
   const [streamingContent, setStreamingContent] = useState(''); // Accumulates streaming chunks / 스트리밍 청크 누적
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -54,8 +55,19 @@ export default function AIPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
 
+  useEffect(() => {
+    fetch('/awsops/api/steampipe?action=config')
+      .then(r => r.json())
+      .then(d => setAgentProvider(d.agent?.provider || 'agentcore'))
+      .catch(() => setAgentProvider('local-mcp-langgraph'));
+  }, []);
+
   // 대화 이력 로드 / Load conversation history
   const loadHistory = () => {
+    if (agentProvider !== 'agentcore') {
+      setHistoryData([]);
+      return;
+    }
     fetch('/awsops/api/agentcore?action=conversations&limit=30')
       .then(r => r.json())
       .then(d => setHistoryData(d.conversations || []))

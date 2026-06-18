@@ -59,6 +59,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [costAvailable, setCostAvailable] = useState<boolean | null>(null);
   const [cacheStatus, setCacheStatus] = useState<any>(null);
+  const [agentProvider, setAgentProvider] = useState<string | null>(null);
+  const isLocalPrivateAgent = agentProvider === 'local-mcp-langgraph';
 
   const fetchData = useCallback(async (bustCache = false) => {
     setLoading(true);
@@ -91,7 +93,7 @@ export default function DashboardPage() {
             secSummary: secQ.summary,
             ecacheSummary: ecacheQ.summary,
             ctSummary: ctQ.summary,
-            cfSummary: cfQ.summary,
+            ...(isLocalPrivateAgent ? {} : { cfSummary: cfQ.summary }),
             wafSummary: wafQ.summary,
             ecrSummary: ecrQ.summary,
             ebsSummary: ebsQ.summary,
@@ -105,7 +107,7 @@ export default function DashboardPage() {
       // Refresh cache status after data load / 데이터 로드 후 캐시 상태 갱신
       fetch('/awsops/api/steampipe?action=cache-status').then(r => r.json()).then(d => setCacheStatus(d)).catch(() => {});
     } catch {} finally { setLoading(false); }
-  }, [costAvailable, currentAccountId]);
+  }, [costAvailable, currentAccountId, isLocalPrivateAgent]);
 
   // Cost Explorer 가용성 선 확인 / Pre-check cost availability
   useEffect(() => {
@@ -119,13 +121,18 @@ export default function DashboardPage() {
       .then(r => r.json())
       .then(d => setCacheStatus(d))
       .catch(() => {});
+    fetch('/awsops/api/steampipe?action=config')
+      .then(r => r.json())
+      .then(d => setAgentProvider(d.agent?.provider || 'agentcore'))
+      .catch(() => setAgentProvider('local-mcp-langgraph'));
   }, [currentAccountId]);
 
   // cost-check 완료 후 fetchData 실행 / Run fetchData after cost-check resolves
   useEffect(() => {
     if (costAvailable === null) return;
+    if (agentProvider === null) return;
     fetchData();
-  }, [costAvailable, fetchData]);
+  }, [agentProvider, costAvailable, fetchData]);
 
   const get = (key: string) => data[key]?.rows || [];
   const getFirst = (key: string) => get(key)[0] || {};
@@ -232,10 +239,12 @@ export default function DashboardPage() {
             <StatsCard label={t('dashboard.lambdaLabel')} value={Number(lambda?.total_functions) || 0} icon={Zap} color="purple"
               change={t('dashboard.lambdaChange', { runtimes: Number(lambda?.unique_runtimes) || 0, longTimeout: Number(lambda?.long_timeout_functions) || 0 })} />
           </CardLink>
-          <CardLink href="/agentcore">
-            <StatsCard label={t('dashboard.agentcoreLabel')} value="8 GW" icon={Container} color="orange"
-              change={t('dashboard.agentcoreChange')} />
-          </CardLink>
+          {agentProvider === 'agentcore' && (
+            <CardLink href="/agentcore">
+              <StatsCard label={t('dashboard.agentcoreLabel')} value="8 GW" icon={Container} color="orange"
+                change={t('dashboard.agentcoreChange')} />
+            </CardLink>
+          )}
           <CardLink href="/ecr">
             <StatsCard label={t('dashboard.ecrLabel')} value={Number(ecrSum?.total_repos) || 0} icon={Package} color="green"
               change={t('dashboard.ecrChange', { scan: Number(ecrSum?.scan_enabled) || 0, immutable: Number(ecrSum?.immutable_tags) || 0 })} />
@@ -244,10 +253,12 @@ export default function DashboardPage() {
             <StatsCard label={t('dashboard.eksLabel')} value={Number(k8sNodes?.total_nodes) || 0} icon={Box} color="pink"
               change={t('dashboard.eksChange', { ready: Number(k8sNodes?.ready_nodes) || 0, pods: totalPods, deploy: Number(k8sDeploy?.total_deployments) || 0 })} />
           </CardLink>
-          <CardLink href="/cloudfront-cdn">
-            <StatsCard label={t('dashboard.cloudfrontLabel')} value={Number(cf?.total_distributions) || 0} icon={Globe} color="cyan"
-              change={t('dashboard.cloudfrontChange', { enabled: Number(cf?.enabled_count) || 0, http: Number(cf?.http_allowed) || 0 })} />
-          </CardLink>
+          {agentProvider === 'agentcore' && (
+            <CardLink href="/cloudfront-cdn">
+              <StatsCard label={t('dashboard.cloudfrontLabel')} value={Number(cf?.total_distributions) || 0} icon={Globe} color="cyan"
+                change={t('dashboard.cloudfrontChange', { enabled: Number(cf?.enabled_count) || 0, http: Number(cf?.http_allowed) || 0 })} />
+            </CardLink>
+          )}
         </div>
       </div>
 

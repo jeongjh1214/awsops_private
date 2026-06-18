@@ -4,7 +4,7 @@
 // 서버 시작 시 + 4분마다 실행 (5분 캐시 TTL 만료 전)
 
 import { batchQuery, checkCostAvailability, startZombieCleanup } from '@/lib/steampipe';
-import { getAccounts, isMultiAccount } from '@/lib/app-config';
+import { getAccounts, isLocalPrivateAgentEnabled, isMultiAccount } from '@/lib/app-config';
 import { queries as ec2Q } from '@/lib/queries/ec2';
 import { queries as s3Q } from '@/lib/queries/s3';
 import { queries as rdsQ } from '@/lib/queries/rds';
@@ -69,6 +69,7 @@ export function getCacheWarmerStatus(): CacheWarmerStatus {
 
 // Dashboard queries (same as page.tsx) / 대시보드 쿼리 (page.tsx와 동일)
 function getDashboardQueries(includeCost: boolean, includeK8s: boolean = true): Record<string, string> {
+  const includeCloudFront = !isLocalPrivateAgentEnabled();
   return {
     ec2Status: ec2Q.statusCount,
     ec2Types: ec2Q.typeDistribution,
@@ -102,7 +103,7 @@ function getDashboardQueries(includeCost: boolean, includeK8s: boolean = true): 
     secSummary: secQ.summary,
     ecacheSummary: ecacheQ.summary,
     ctSummary: ctQ.summary,
-    cfSummary: cfQ.summary,
+    ...(includeCloudFront ? { cfSummary: cfQ.summary } : {}),
     wafSummary: wafQ.summary,
     ecrSummary: ecrQ.summary,
     ebsSummary: ebsQ.summary,

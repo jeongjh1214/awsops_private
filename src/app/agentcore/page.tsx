@@ -24,6 +24,8 @@ export default function AgentCorePage() {
   const [memorySearch, setMemorySearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [cacheInfo, setCacheInfo] = useState<any>(null);
+  const [agentProvider, setAgentProvider] = useState<string | null>(null);
+  const isLocalPrivateAgent = agentProvider === 'local-mcp-langgraph';
 
   const fetchStatus = () => {
     setLoading(true);
@@ -41,6 +43,7 @@ export default function AgentCorePage() {
   };
 
   const searchMemory = async () => {
+    if (isLocalPrivateAgent) return;
     if (!memorySearch.trim()) {
       const res = await fetch('/awsops/api/agentcore?action=conversations&limit=20');
       const data = await res.json();
@@ -52,11 +55,50 @@ export default function AgentCorePage() {
     setConversations(data.conversations || []);
   };
 
-  useEffect(() => { fetchStatus(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/awsops/api/steampipe?action=config')
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled) return;
+        const provider = d.agent?.provider || 'agentcore';
+        setAgentProvider(provider);
+        if (provider === 'local-mcp-langgraph') {
+          setLoading(false);
+          return;
+        }
+        fetchStatus();
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAgentProvider('local-mcp-langgraph');
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const totalTools = Object.values(GATEWAY_TOOLS).reduce((a, b) => a + b, 0);
   const readyGateways = status?.gateways?.filter((g: any) => g.status === 'READY').length || 0;
   const totalGateways = status?.gateways?.length || 0;
+
+  if (isLocalPrivateAgent) {
+    return (
+      <div className="p-6 space-y-6 animate-fade-in">
+        <Header title={t('agentcore.title')} subtitle="Local MCP + LangGraph mode is active" />
+        <div className="bg-navy-800 rounded-lg border border-navy-600 p-6">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 rounded-lg bg-accent-cyan/10">
+              <Activity size={20} className="text-accent-cyan" />
+            </div>
+            <h2 className="text-lg font-semibold text-white">AgentCore disabled</h2>
+          </div>
+          <p className="text-sm text-gray-400">
+            This deployment is using the local private agent provider, so AgentCore runtime, gateway, code interpreter, and memory APIs are not called.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">

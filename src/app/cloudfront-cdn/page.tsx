@@ -18,8 +18,14 @@ export default function CloudFrontPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [agentProvider, setAgentProvider] = useState<string | null>(null);
+  const isLocalPrivateAgent = agentProvider === 'local-mcp-langgraph';
 
   const fetchData = useCallback(async (bustCache = false) => {
+    if (isLocalPrivateAgent) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(bustCache ? '/awsops/api/steampipe?bustCache=true' : '/awsops/api/steampipe', {
@@ -28,11 +34,26 @@ export default function CloudFrontPage() {
       });
       setData(await res.json());
     } catch {} finally { setLoading(false); }
-  }, [currentAccountId]);
+  }, [currentAccountId, isLocalPrivateAgent]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetch('/awsops/api/steampipe?action=config')
+      .then(r => r.json())
+      .then(d => setAgentProvider(d.agent?.provider || 'agentcore'))
+      .catch(() => setAgentProvider('local-mcp-langgraph'));
+  }, []);
+
+  useEffect(() => {
+    if (agentProvider === null) return;
+    if (isLocalPrivateAgent) {
+      setLoading(false);
+      return;
+    }
+    fetchData();
+  }, [agentProvider, fetchData, isLocalPrivateAgent]);
 
   const fetchDetail = async (distId: string) => {
+    if (isLocalPrivateAgent) return;
     setDetailLoading(true);
     try {
       const sql = cfQ.detail.replace('{dist_id}', distId);
@@ -52,6 +73,25 @@ export default function CloudFrontPage() {
 
   const parseJson = (val: any) => { try { return JSON.parse(val || '[]'); } catch { return []; } };
   const parseTags = (tags: any) => { if (!tags) return {}; if (typeof tags === 'string') try { return JSON.parse(tags); } catch { return {}; } return typeof tags === 'object' ? tags : {}; };
+
+  if (isLocalPrivateAgent) {
+    return (
+      <div className="p-6 space-y-6 animate-fade-in">
+        <Header title={t('cloudfront.title')} subtitle="Disabled in private local agent mode" />
+        <div className="bg-navy-800 rounded-lg border border-navy-600 p-6">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 rounded-lg bg-accent-cyan/10">
+              <Globe size={20} className="text-accent-cyan" />
+            </div>
+            <h2 className="text-lg font-semibold text-white">CloudFront collection disabled</h2>
+          </div>
+          <p className="text-sm text-gray-400">
+            This private deployment avoids CloudFront API collection because the service is outside the required VPC endpoint path.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">

@@ -954,6 +954,65 @@ async function streamLocalPrivateAgent(requestBody: any): Promise<Response> {
   });
 }
 
+async function invokeLocalPrivateAgentJson(requestBody: any): Promise<NextResponse> {
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${getLangGraphApiUrl()}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      cache: 'no-store',
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: `Local private agent unavailable: ${err.message || 'connection failed'}` },
+      { status: 502 }
+    );
+  }
+
+  if (!upstream.ok) {
+    return NextResponse.json(
+      { error: `Local private agent unavailable: HTTP ${upstream.status}` },
+      { status: 502 }
+    );
+  }
+
+  const raw = await upstream.text();
+  let eventType = '';
+  let content = '';
+  let finalPayload: Record<string, any> | null = null;
+
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.startsWith('event: ')) {
+      eventType = line.slice(7).trim();
+      continue;
+    }
+    if (!line.startsWith('data: ') || !eventType) continue;
+
+    try {
+      const data = JSON.parse(line.slice(6));
+      if (eventType === 'chunk') {
+        content += data.delta || '';
+      } else if (eventType === 'done') {
+        finalPayload = data;
+      } else if (eventType === 'error') {
+        return NextResponse.json({ error: data.error || 'Local private agent failed' }, { status: 502 });
+      }
+    } catch {}
+    eventType = '';
+  }
+
+  if (finalPayload) return NextResponse.json(finalPayload);
+  return NextResponse.json({
+    content,
+    model: requestBody.model,
+    queriedResources: [],
+    usedTools: [],
+    via: 'Local MCP + LangGraph',
+    route: 'local-private-agent',
+  });
+}
+
 // POST handler — SSE streaming with step-by-step progress events
 // POST 핸들러 — 단계별 진행 이벤트를 포함한 SSE 스트리밍
 // ============================================================================
@@ -998,6 +1057,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Messages required' }, { status: 400 });
 
   if (shouldUseLocalPrivateAgent()) {
+    if (!useStream) {
+      return invokeLocalPrivateAgentJson(reqBody);
+    }
     return streamLocalPrivateAgent(reqBody);
   }
 
