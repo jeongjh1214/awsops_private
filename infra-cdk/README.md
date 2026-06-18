@@ -44,7 +44,7 @@ cdk deploy --all \
 |-----------|---------|-------------|
 | `InstanceType` | `t4g.2xlarge` | EC2 instance type (ARM64 Graviton) |
 | `VSCodePassword` | (required) | code-server password (min 8 chars) |
-| `CloudFrontPrefixListId` | `''` | CloudFront prefix list for ALB SG (required for public mode) |
+| `CloudFrontPrefixListId` | public: (required), private: `''` | CloudFront prefix list for ALB SG (public mode only) |
 
 ## Private/Internal Deployment
 
@@ -61,6 +61,8 @@ Private mode creates an internal ALB and skips CloudFront/Cognito, AgentCore, an
 
 ## 아키텍처 / Architecture
 
+### Public Mode
+
 ```
 Internet -> CloudFront (HTTPS)
               |-- /awsops*       -> ALB:3000 -> EC2:3000 (Dashboard)
@@ -72,16 +74,42 @@ VPC 10.254.0.0/16
   Private Subnets: EC2, SSM VPC Endpoints
 ```
 
+### Private/Internal Mode
+
+```
+Direct Connect / private network -> Internal ALB:3000 -> EC2:3000 (Dashboard /awsops)
+
+VPC
+  Private Subnets: EC2
+  Existing service endpoints: configure in data/config.json
+```
+
+Private mode skips CloudFront, Cognito, AgentCore, and SSM VPC endpoint creation. Use the `InternalALBEndpoint` stack output for the dashboard URL.
+
 ## 배포 후 단계 / Post-Deploy Steps
 
+### Public Mode
+
 CDK 배포 후, 아래 설정 스크립트를 순서대로 실행하세요:
-(After CDK deploy, continue with the setup scripts:)
+(After CDK deploy, continue with the setup scripts for public mode:)
 1. SSM으로 EC2 접속: `aws ssm start-session --target INSTANCE_ID` (SSM into EC2)
 2. `01-install-base.sh` 실행 — 기본 도구 설치 (Steampipe + Powerpipe)
 3. `02-setup-nextjs.sh` 실행 — Next.js 앱 설정 (Next.js app)
 4. `03-build-deploy.sh` 실행 — 빌드 및 실행 (build and start)
 5. `05-setup-cognito.sh` 실행 — Cognito 콜백 URL 업데이트 (update Cognito callback URLs)
 6. `06-setup-agentcore.sh` 실행 — AI 에이전트 설정 (AI agent)
+
+### Private/Internal Mode
+
+CDK 배포 후, 내부 ALB URL을 사용하세요:
+(After CDK deploy, use the internal ALB URL:)
+1. SSM으로 EC2 접속: `aws ssm start-session --target INSTANCE_ID` (SSM into EC2)
+2. `01-install-base.sh` 실행 — 기본 도구 설치 (Steampipe + Powerpipe)
+3. `02-setup-nextjs.sh` 실행 — Next.js 앱 설정 (Next.js app)
+4. `03-build-deploy.sh` 실행 — 빌드 및 실행 (build and start)
+5. `InternalALBEndpoint` 출력값으로 대시보드 접속 (open the dashboard using the `InternalALBEndpoint` output)
+
+Private mode does not create CloudFront, Cognito, AgentCore, or SSM VPC endpoints. Do not run `05-setup-cognito.sh` or `06-setup-agentcore.sh`; configure existing service endpoints in `data/config.json`.
 
 ## 정리 / Cleanup
 

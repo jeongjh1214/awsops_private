@@ -6,7 +6,8 @@ import { CognitoStack } from '../lib/cognito-stack';
 import { AgentCoreStack } from '../lib/agentcore-stack';
 
 const app = new cdk.App();
-const privateMode = app.node.tryGetContext('privateMode') === 'true';
+const privateModeContext = app.node.tryGetContext('privateMode');
+const privateMode = privateModeContext === true || privateModeContext === 'true';
 
 const env = {
   account: process.env.CDK_DEFAULT_ACCOUNT,

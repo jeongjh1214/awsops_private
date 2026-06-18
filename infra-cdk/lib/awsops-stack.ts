@@ -41,17 +41,18 @@ export class AwsopsStack extends cdk.Stack {
       description: 'Password for VSCode Server (minimum 8 characters)',
     });
 
-    const cloudFrontPrefixListId = new cdk.CfnParameter(this, 'CloudFrontPrefixListId', {
-      type: 'String',
-      default: '',
-      description: 'CloudFront origin-facing managed prefix list ID (pl-22a6434b for ap-northeast-2)',
-    });
-
-    const privateMode = this.node.tryGetContext('privateMode') === 'true';
+    const privateModeContext = this.node.tryGetContext('privateMode');
+    const privateMode = privateModeContext === true || privateModeContext === 'true';
     const internalAlbCidrs = ((this.node.tryGetContext('internalAlbCidrs') as string) || '')
       .split(',')
       .map(c => c.trim())
       .filter(Boolean);
+
+    const cloudFrontPrefixListId = new cdk.CfnParameter(this, 'CloudFrontPrefixListId', {
+      type: 'String',
+      ...(privateMode ? { default: '' } : { minLength: 1 }),
+      description: 'CloudFront origin-facing managed prefix list ID (pl-22a6434b for ap-northeast-2)',
+    });
 
     // 기존 VPC ID (빈 값이면 새 VPC 생성) / Existing VPC ID (empty = create new VPC)
     const existingVpcId = new cdk.CfnParameter(this, 'ExistingVpcId', {
@@ -151,6 +152,16 @@ export class AwsopsStack extends cdk.Stack {
         albSg.addIngressRule(ec2.Peer.ipv4(cidr), ec2.Port.tcp(3000), `Dashboard from internal CIDR ${idx + 1}`);
       });
     } else {
+      const cloudFrontPrefixListValue = cloudFrontPrefixListId.valueAsString;
+      if (!cdk.Token.isUnresolved(cloudFrontPrefixListValue) && cloudFrontPrefixListValue.trim() === '') {
+        throw new Error('public mode requires --parameters AwsopsStack:CloudFrontPrefixListId=pl-...');
+      }
+      new cdk.CfnRule(this, 'RequireCloudFrontPrefixListId', {
+        assertions: [{
+          assert: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(cloudFrontPrefixListValue, '')),
+          assertDescription: 'public mode requires --parameters AwsopsStack:CloudFrontPrefixListId=pl-...',
+        }],
+      });
       // Use single port range (80-3000) to stay within SG rules limit
       // CloudFront prefix list has 120+ entries; each entry counts as 1 rule
       new ec2.CfnSecurityGroupIngress(this, 'ALBIngressFromCloudFront', {
@@ -158,7 +169,7 @@ export class AwsopsStack extends cdk.Stack {
         ipProtocol: 'tcp',
         fromPort: 80,
         toPort: 3000,
-        sourcePrefixListId: cloudFrontPrefixListId.valueAsString,
+        sourcePrefixListId: cloudFrontPrefixListValue,
         description: 'HTTP/Dashboard ports from CloudFront origin-facing',
       });
     }
