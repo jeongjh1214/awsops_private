@@ -38,6 +38,16 @@ function getCodeInterpreterName(): string {
   return config.codeInterpreterName || '';
 }
 
+function useLocalPrivateAgent(): boolean {
+  const config = getConfig();
+  return config.agent?.provider === 'local-mcp-langgraph';
+}
+
+function getLangGraphApiUrl(): string {
+  const config = getConfig();
+  return config.agent?.langgraphApiUrl || 'http://127.0.0.1:7000';
+}
+
 // Available Bedrock models / 사용 가능한 Bedrock 모델
 // Seoul region uses global.* prefix for cross-region inference / 서울 리전은 global.* 접두사 사용
 const MODELS: Record<string, string> = {
@@ -912,6 +922,30 @@ function recordAndSave(p: {
   saveConversation({ id: `${Date.now()}`, userId: p.userId, timestamp: new Date().toISOString(), route: p.route, gateway: p.gateway, question: p.question.slice(0, 100), summary: p.summary.slice(0, 200), usedTools: p.usedTools, responseTimeMs: p.responseTimeMs, via: p.via }).catch(() => {});
 }
 
+async function streamLocalPrivateAgent(requestBody: any): Promise<Response> {
+  const upstream = await fetch(`${getLangGraphApiUrl()}/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!upstream.ok || !upstream.body) {
+    return NextResponse.json(
+      { error: `Local private agent unavailable: HTTP ${upstream.status}` },
+      { status: 502 }
+    );
+  }
+
+  return new Response(upstream.body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+    },
+  });
+}
+
 // POST handler — SSE streaming with step-by-step progress events
 // POST 핸들러 — 단계별 진행 이벤트를 포함한 SSE 스트리밍
 // ============================================================================
@@ -954,6 +988,11 @@ export async function POST(request: NextRequest) {
 
   if (!messages || !Array.isArray(messages) || messages.length === 0)
     return NextResponse.json({ error: 'Messages required' }, { status: 400 });
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  if (useLocalPrivateAgent()) {
+    return streamLocalPrivateAgent(reqBody);
+  }
 
   // Cognito 사용자 정보 추출 / Extract Cognito user from JWT
   const currentUser = getUserFromRequest(request);
