@@ -923,11 +923,19 @@ function recordAndSave(p: {
 }
 
 async function streamLocalPrivateAgent(requestBody: any): Promise<Response> {
-  const upstream = await fetch(`${getLangGraphApiUrl()}/chat/stream`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${getLangGraphApiUrl()}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: `Local private agent unavailable: ${err.message || 'connection failed'}` },
+      { status: 502 }
+    );
+  }
 
   if (!upstream.ok || !upstream.body) {
     return NextResponse.json(
