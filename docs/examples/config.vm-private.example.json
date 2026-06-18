@@ -1,0 +1,72 @@
+{
+  "costEnabled": true,
+  "activeEnvironment": "local",
+  "environments": {
+    "local": {
+      "networkMode": "external-explicit-vpce",
+      "endpointMode": "explicit",
+      "bedrockProfile": "bedrock-local-profile",
+      "awsProfile": "awsops-local-profile",
+      "endpointUrls": {
+        "bedrock-runtime": "https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com",
+        "sts": "https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com"
+      },
+      "requiredEndpoints": [
+        "bedrock-runtime",
+        "sts"
+      ]
+    },
+    "dev": {
+      "networkMode": "external-explicit-vpce",
+      "endpointMode": "explicit",
+      "bedrockProfile": "bedrock-dev-profile",
+      "awsProfile": "awsops-dev-profile",
+      "endpointUrls": {
+        "bedrock-runtime": "https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com",
+        "sts": "https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com"
+      },
+      "requiredEndpoints": [
+        "bedrock-runtime",
+        "sts"
+      ]
+    },
+    "prod": {
+      "networkMode": "vpc-hybrid",
+      "endpointMode": "hybrid",
+      "bedrockProfile": "bedrock-prod-profile",
+      "awsProfile": "awsops-prod-profile",
+      "endpointUrls": {},
+      "requiredEndpoints": [
+        "bedrock-runtime",
+        "sts"
+      ]
+    }
+  },
+  "agent": {
+    "provider": "local-mcp-langgraph",
+    "modelId": "anthropic.claude-sonnet-4-6",
+    "langgraphApiUrl": "http://127.0.0.1:7000",
+    "mcpServerUrl": "http://127.0.0.1:7100",
+    "maxConcurrentBedrockCalls": 3,
+    "maxConcurrentAwsCalls": 8,
+    "maxConcurrentSteampipeQueries": 5,
+    "toolTimeoutMs": 30000,
+    "queryCacheTtlSec": 300,
+    "maxToolResultBytes": 200000
+  },
+  "accounts": [
+    {
+      "accountId": "123456789012",
+      "alias": "local-test",
+      "connectionName": "aws_123456789012",
+      "region": "ap-northeast-2",
+      "isHost": true,
+      "profile": "awsops-local-profile",
+      "features": {
+        "costEnabled": true,
+        "eksEnabled": false,
+        "k8sEnabled": false
+      }
+    }
+  ]
+}

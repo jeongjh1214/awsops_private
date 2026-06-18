@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/layout/Header';
 import { useAccountContext } from '@/contexts/AccountContext';
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, Shield, Copy } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, Shield } from 'lucide-react';
 
 interface AccountEntry {
   accountId: string;
@@ -49,7 +49,6 @@ export default function AccountsPage() {
   const [adding, setAdding] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [hostAlias, setHostAlias] = useState('Host');
   const [initingHost, setInitingHost] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -201,20 +200,6 @@ export default function AccountsPage() {
     } finally {
       setInitingHost(false);
     }
-  };
-
-  const hostAccountId = accounts.find(a => a.isHost)?.accountId || '<HOST_ACCOUNT_ID>';
-
-  const cfnCommand = `aws cloudformation deploy \\
-  --template-file infra-cdk/cfn-target-account-role.yaml \\
-  --stack-name awsops-target-role \\
-  --parameter-overrides HostAccountId=${hostAccountId} \\
-  --capabilities CAPABILITY_NAMED_IAM`;
-
-  const copyCommand = () => {
-    navigator.clipboard.writeText(cfnCommand).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   const aliasInvalid = newAlias.length > 0 && !ALIAS_PATTERN.test(newAlias);
@@ -512,7 +497,7 @@ export default function AccountsPage() {
           </div>
         </div>
 
-        {/* CFN Deploy Instructions */}
+        {/* Pre-provisioned target account instructions */}
         <div className="bg-navy-800 rounded-xl border border-navy-600 overflow-hidden">
           <div className="px-6 py-4 border-b border-navy-600">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -520,38 +505,25 @@ export default function AccountsPage() {
               Target Account Setup
             </h2>
             <p className="text-sm text-gray-400 mt-0.5">
-              Deploy the IAM role in the target account before adding it here
+              Register only pre-approved accounts, roles, and profiles
             </p>
           </div>
 
           <div className="px-6 py-5 space-y-4">
             <div className="space-y-2">
               <p className="text-sm text-gray-300">
-                Run this CloudFormation command in the <span className="text-cyan-400">target account</span> to create the cross-account IAM role:
+                AWSops private mode does not create IAM roles or deploy CloudFormation stacks. Ask the platform or security team to pre-provision the target account role and Steampipe profile, then register the approved metadata here.
               </p>
-
-              <div className="relative">
-                <pre className="bg-navy-900 border border-navy-600 rounded-lg px-4 py-3 text-sm text-gray-300 font-mono overflow-x-auto whitespace-pre-wrap">
-                  {cfnCommand}
-                </pre>
-                <button
-                  onClick={copyCommand}
-                  className="absolute top-2 right-2 p-1.5 rounded-md bg-navy-700 border border-navy-600 text-gray-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-colors"
-                  title="Copy to clipboard"
-                >
-                  {copied ? <CheckCircle size={14} className="text-green-400" /> : <Copy size={14} />}
-                </button>
-              </div>
             </div>
 
             <div className="bg-navy-900/50 border border-navy-600 rounded-lg px-4 py-3 space-y-2">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Steps</p>
               <ol className="text-sm text-gray-400 space-y-1.5 list-decimal list-inside">
-                <li>Deploy the CloudFormation stack in the target account</li>
-                <li>Enter the target account ID and alias above</li>
+                <li>Confirm the target account role/profile was created through the approved internal process</li>
+                <li>Enter the target account ID, alias, region, and approved role name above</li>
                 <li>Click <span className="text-cyan-400">Test Connection</span> to verify AssumeRole access</li>
                 <li>Click <span className="text-green-400">Add Account</span> to register the account</li>
-                <li>Configure Steampipe connection for the new account</li>
+                <li>Confirm the matching Steampipe connection/profile is present on this host</li>
               </ol>
             </div>
           </div>

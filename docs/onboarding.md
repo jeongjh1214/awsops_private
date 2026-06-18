@@ -1,82 +1,47 @@
-# AWSops Developer Onboarding
+# Onboarding
 
-## Prerequisites
+## What This Branch Is
 
-- **Node.js** 18+ (LTS recommended)
-- **AWS CLI** v2 configured with appropriate credentials
-- **Steampipe** installed with AWS + Kubernetes plugins
-- **EC2 Access** via SSM Session Manager (dev: 10.254.2.31, prod: 10.254.2.165)
+This is the private VM-only branch of AWSops.
 
-## Quick Start
+It runs the dashboard, Steampipe, and local MCP/LangGraph agent on an existing host. It does not create or manage AWS infrastructure.
 
-```bash
-# 1. Clone and install dependencies
-git clone <repo-url> && cd awsops
-npm install
+## What Not To Do
 
-# 2. Configure Steampipe (if not already running)
-steampipe service start --database-listen network
+Do not add scripts or code paths that create:
 
-# 3. Create local config
-cp .env.example .env.local
-# Edit data/config.json with your account details
+- CDK or CloudFormation stacks
+- VPC endpoints, VPCs, subnets, route tables, security groups, load balancers, or transit attachments
+- CloudFront, Lambda@Edge, Cognito, AgentCore, Lambda, ECR, or IAM resources
+- Kubernetes add-ons unless explicitly approved for that environment
 
-# 4. Development build (not recommended — use production build)
-npm run build && npm run start
+If a resource is needed, request it through the approved platform/security process and add only the resulting endpoint, profile, role name, or DNS name to `data/config.json`.
 
-# 5. Access at http://localhost:3000/awsops/
-```
+## First Files To Read
 
-## Key Concepts
+1. `README.md`
+2. `docs/architecture.md`
+3. `docs/INSTALL_GUIDE.md`
+4. `docs/examples/config.vm-private.example.json`
+5. `agent/private_runtime/config.py`
+6. `src/lib/app-config.ts`
 
-### Data Flow
-All AWS data is queried through **Steampipe's embedded PostgreSQL** (port 9193), not the AWS SDK directly. This gives us SQL access to 380+ AWS tables and 60+ K8s tables.
+## Local Test Checklist
 
-### Architecture Layers
-1. **Frontend**: Next.js 14 App Router + Tailwind dark theme
-2. **Data**: Steampipe pg Pool → node-cache (5min TTL)
-3. **AI**: Bedrock AgentCore → 8 Gateways → 125 MCP tools
-4. **Auth**: Cognito + Lambda@Edge + CloudFront
+1. Configure `~/.aws/credentials` with the AWSops and Bedrock profiles.
+2. Copy `docs/examples/config.vm-private.example.json` to `data/config.json`.
+3. Set `activeEnvironment` to `local`.
+4. Fill `endpointUrls` with approved VPCE hostnames.
+5. Start Steampipe.
+6. Run `npm run dev`.
+7. Run `bash scripts/13-start-private-agent.sh`.
+8. Open `http://127.0.0.1:3000/awsops`.
 
-### Critical Rules
-- **Never use Steampipe CLI** for queries — use `runQuery()` / `batchQuery()` from `src/lib/steampipe.ts`
-- **All fetch URLs** must include `/awsops/api/*` prefix
-- **All components** use `export default`
-- **Verify column names** via `information_schema.columns` before writing SQL
+## Development Rules
 
-## Project Structure
-
-```
-src/
-  app/          36 pages + 13 API routes
-  lib/          Core libraries (steampipe, queries, config, cache)
-  components/   17 shared components
-  contexts/     React contexts (Account, Language)
-agent/          Strands agent + 19 Lambda tools
-infra-cdk/      CDK infrastructure (3 stacks)
-scripts/        22 deployment scripts (steps 0-11)
-data/           Runtime config + snapshots
-docs/           Architecture, ADRs, runbooks
-```
-
-## Deployment
-
-See `scripts/ARCHITECTURE.md` for the full 11-step deployment flow.
-Quick deploy: `bash scripts/03-build-deploy.sh`
-
-## Useful Commands
-
-| Command | Description |
-|---------|-------------|
-| `npm run build` | Production build |
-| `npm run start` | Start production server |
-| `npx next lint` | Run ESLint |
-| `npx tsc --noEmit` | Type check |
-| `bash tests/run-all.sh` | Run project structure tests |
-
-## Getting Help
-
-- **Architecture**: `docs/architecture.md`
-- **Troubleshooting**: `docs/TROUBLESHOOTING.md`
-- **ADRs**: `docs/decisions/` (8 architecture decisions documented)
-- **Runbooks**: `docs/runbooks/` (start-services, add-new-page)
+- Prefer config-driven behavior over environment-specific code.
+- Fail closed when config cannot confirm a restricted surface is allowed.
+- Keep AWS SDK calls profile-aware and endpoint-aware.
+- Do not reintroduce `infra-cdk/`.
+- Do not add setup scripts that create AWS resources.
+- Keep docs aligned with private VM-only deployment.

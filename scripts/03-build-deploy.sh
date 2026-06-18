@@ -14,7 +14,7 @@ set -e
 #     - fetch URLs must use /awsops/api/* prefix                               #
 #     - .eslintrc.json: no-explicit-any off (Steampipe results are dynamic)   #
 #     - Components: default exports (not named)                                #
-#     - Production build required (dev mode = ALB health check failures)       #
+#     - Production build required for stable VM service operation              #
 #                                                                              #
 ################################################################################
 
@@ -38,7 +38,8 @@ CHECKS_PASSED=0
 CHECKS_WARNED=0
 
 # Check basePath in next.config.mjs
-#   FIX: basePath must be '/awsops' for CloudFront routing.
+#   Private VM mode keeps basePath at '/awsops' so the app can sit behind
+#   an existing internal proxy or be opened directly on the VM.
 #   Next.js <Link> auto-adds basePath, but fetch() does NOT.
 #   See: docs/TROUBLESHOOTING.md #5 (basePath 이슈)
 if grep -q "basePath.*awsops" next.config.mjs 2>/dev/null; then
@@ -90,11 +91,10 @@ echo "  Validation: $CHECKS_PASSED passed, $CHECKS_WARNED warnings"
 # -- [2/3] Production build ---------------------------------------------------
 #   FIX: MUST use production build. Dev mode (npm run dev) causes:
 #     - JIT compilation per page (1-2s per request vs 3-6ms)
-#     - ALB health check failures
-#   See: docs/TROUBLESHOOTING.md #7 (Production vs Dev)
+#     - slower first page responses on shared development servers
 echo ""
 echo -e "${CYAN}[2/3] Building production (npm run build)...${NC}"
-echo -e "  ${YELLOW}NOTE: Production build required. Dev mode causes ALB health check failures.${NC}"
+echo -e "  ${YELLOW}NOTE: Production build is recommended for shared VM deployments.${NC}"
 
 npm run build 2>&1 | tail -5
 
@@ -161,5 +161,5 @@ echo ""
 echo "    Auto-applied features (no config needed):"
 echo "      - Cache pre-warming: dashboard + monitoring queries warmed every 4 min"
 echo "      - Real-time Bedrock streaming: AI responses stream character by character"
-echo "      - AgentCore API caching: 5-min cache for CLI status calls"
+echo "      - Private AI: local MCP + LangGraph provider via data/config.json"
 echo ""

@@ -34,14 +34,14 @@ QUESTION_BANK = OrderedDict([
         # Basic IAM queries / 기본 IAM 조회
         ("security", "보안 요약",               "보안 이슈가 있는지 확인해줘"),
         ("security", "IAM 사용자 목록",          "IAM 사용자 목록과 Access Key 상태를 보여줘"),
-        ("security", "역할 분석",               "AWSopsAgentCoreRole의 권한을 분석해줘"),
+        ("security", "역할 분석",               "AWSopsReadOnlyRole의 권한을 분석해줘"),
         ("security", "그룹 목록",               "IAM 그룹 목록을 보여줘"),
         ("security", "정책 목록",               "현재 계정의 커스텀 IAM 정책을 조회해줘"),
         # Advanced security / 고급 보안
         ("security", "권한 시뮬레이션",          "EC2 역할이 S3에 접근할 수 있는지 테스트해줘"),
         ("security", "미사용 자격 증명",         "90일 이상 사용하지 않은 Access Key가 있는지 확인해줘"),
-        ("security", "역할 상세",               "AWSopsLambdaNetworkRole에 연결된 모든 정책을 보여줘"),
-        ("security", "인라인 정책",             "AWSopsAgentCoreRole의 인라인 정책 내용을 보여줘"),
+        ("security", "역할 상세",               "AWSopsReadOnlyRole에 연결된 모든 정책을 보여줘"),
+        ("security", "인라인 정책",             "AWSopsReadOnlyRole의 인라인 정책 내용을 보여줘"),
         ("security", "사용자 상세",             "whchoi98 사용자의 권한과 그룹 멤버십을 알려줘"),
         ("security", "MFA 상태",               "MFA가 설정되지 않은 사용자가 있는지 확인해줘"),
         ("security", "루트 계정 보안",           "루트 계정의 보안 상태를 점검해줘"),
@@ -152,14 +152,14 @@ QUESTION_BANK = OrderedDict([
     ]),
 
     ("iac", [
-        # CDK / CDK
-        ("iac", "CDK 모범사례",               "CDK 모범사례를 알려줘"),
-        ("iac", "CDK 예제",                   "CDK로 S3 버킷 만드는 예제를 보여줘"),
-        ("iac", "CDK VPC",                    "CDK로 VPC와 서브넷을 만드는 방법을 알려줘"),
-        ("iac", "CDK Lambda",                 "CDK로 Lambda 함수를 배포하는 방법을 알려줘"),
-        # CloudFormation / CloudFormation
-        ("iac", "CF 문서",                    "CloudFormation Lambda 리소스 문서를 찾아줘"),
-        ("iac", "CF EC2 문서",                "CloudFormation EC2 Instance 속성을 알려줘"),
+        # IaC review / IaC 검토
+        ("iac", "IaC 금지 리소스",             "IaC 템플릿에서 CloudFront나 Cognito 같은 금지 리소스를 찾는 기준을 알려줘"),
+        ("iac", "IaC 보안 검토",               "S3 버킷 IaC 템플릿을 검토할 때 공개 접근 위험을 확인하는 방법을 알려줘"),
+        ("iac", "IaC 네트워크 검토",            "VPC 관련 IaC 변경을 리뷰할 때 라우팅과 보안그룹 관점에서 볼 항목을 알려줘"),
+        ("iac", "IaC 함수 검토",               "Lambda IaC 변경을 리뷰할 때 권한과 네트워크 설정에서 확인할 항목을 알려줘"),
+        # CloudFormation documentation review / CloudFormation 문서 검토
+        ("iac", "CF 문서",                    "CloudFormation 템플릿에서 금지 리소스 생성을 식별하는 방법을 알려줘"),
+        ("iac", "CF EC2 문서",                "CloudFormation EC2 Instance 속성을 검토할 때 주의할 설정을 알려줘"),
         # Terraform / Terraform
         ("iac", "Terraform 모듈",             "Terraform VPC 모듈을 검색해줘"),
         ("iac", "Terraform S3",              "Terraform으로 S3 버킷 만드는 문서를 찾아줘"),
@@ -303,7 +303,7 @@ def show_menu():
         "monitoring": "CloudWatch 알람/메트릭, CloudTrail 감사",
         "data":       "DynamoDB, RDS, ElastiCache, MSK",
         "aws-data":   "Steampipe SQL로 리소스 조회",
-        "iac":        "CDK, Terraform, CloudFormation",
+        "iac":        "IaC 문서 검토, Terraform, CloudFormation",
         "code":       "Python 코드 실행 (Code Interpreter)",
         "general":    "AWS 문서, 리전 가용성, 추천",
     }

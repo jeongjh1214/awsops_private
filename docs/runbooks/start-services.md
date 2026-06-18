@@ -9,7 +9,7 @@ bash scripts/09-start-all.sh
 
 ### 1. Steampipe
 ```bash
-steampipe service start --database-listen local --database-port 9193
+steampipe service start --database-listen network --database-port 9193
 steampipe service status --show-password
 ```
 
@@ -19,7 +19,12 @@ cd /home/ec2-user/awsops
 PORT=3000 npm run start &
 ```
 
-### 3. 검증 / Verify
+### 3. Private agent
+```bash
+bash scripts/13-start-private-agent.sh
+```
+
+### 4. 검증 / Verify
 ```bash
 curl -s http://localhost:3000/awsops  # 200 응답이 와야 함 (should return 200)
 bash scripts/11-verify.sh             # 전체 점검 (full check)

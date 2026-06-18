@@ -1,79 +1,134 @@
-# AWSops 대시보드 - 설치 가이드 / AWSops Dashboard - Installation Guide
+# AWSops Private VM Install Guide
 
-## 아키텍처 개요 / Architecture Overview
+## Principle
 
-```
-Browser → CloudFront (Cognito Auth) → ALB → EC2 (Next.js:3000)
-                                                │
-                                                ├─ Steampipe (PostgreSQL:9193)
-                                                │   ├─ AWS Plugin
-                                                │   ├─ Kubernetes Plugin
-                                                │   └─ Trivy Plugin (CVE)
-                                                │
-                                                ├─ Powerpipe (CIS Benchmark)
-                                                │
-                                                └─ Bedrock AI (us-east-1)
-                                                    └─ AgentCore Runtime (Strands)
-                                                        └─ AgentCore Gateway (MCP)
-                                                            ├─ Lambda: Reachability Analyzer
-                                                            ├─ Lambda: Flow Monitor
-                                                            ├─ Lambda: Network MCP
-                                                            └─ Lambda: Steampipe Query
-```
+Install AWSops only on an existing host. Do not create AWS infrastructure from this repository.
 
-## 대시보드 페이지 (30개) / Dashboard Pages (30 pages)
+The host can be:
 
-| 카테고리 / Category | 페이지 / Page | 경로 / Path | 기능 / Features |
-|----------|------|------|----------|
-| **Overview** | Dashboard | `/awsops` | 20개 StatsCards, 차트, 경고 (20 StatsCards, Charts, Warnings) |
-| | AI Assistant | `/awsops/ai` | Claude Sonnet/Opus 4.6, SSE 스트리밍, 멀티 라우트 (SSE streaming, multi-route) |
-| | AgentCore | `/awsops/agentcore` | 런타임 상태, 8 Gateway, 125 도구 (Runtime status, 8 Gateways, 125 tools) |
-| **Compute** | EC2 | `/awsops/ec2` | 인스턴스 + 상세 패널 (Instances + detail panel) |
-| | Lambda | `/awsops/lambda` | 함수, 런타임, 메모리/타임아웃 (Functions, runtimes, memory/timeout) |
-| | ECS | `/awsops/ecs` | 클러스터, 서비스, 태스크 (Clusters, services, tasks) |
-| | ECR | `/awsops/ecr` | 리포지토리, 이미지, 스캔 (Repositories, images, scan) |
-| | EKS Overview | `/awsops/k8s` | 클러스터, 노드, Pod 요약 (Clusters, nodes, pod summary) |
-| | EKS Pods/Nodes/Deploy/Svc | `/awsops/k8s/*` | Pod, 노드, Deployment, Service 목록 (4 sub-pages) |
-| | EKS Explorer | `/awsops/k8s/explorer` | K9s 스타일 터미널 UI (K9s-style terminal UI) |
-| **Network & CDN** | VPC / Network | `/awsops/vpc` | VPC, Subnet, SG, TGW, ELB, NAT, IGW + 리소스 맵 (Resource Map) |
-| | CloudFront | `/awsops/cloudfront-cdn` | 배포, Origins, Aliases (Distributions) |
-| | WAF | `/awsops/waf` | Web ACL, 규칙, IP Sets (Rules, IP Sets) |
-| | Topology | `/awsops/topology` | 인프라 맵 + K8s 맵 (React Flow) |
-| **Storage & DB** | EBS | `/awsops/ebs` | 볼륨, 스냅샷, 암호화, EC2 어태치먼트 매핑 (Volumes, Snapshots, encryption, attachment mapping) |
-| | S3 | `/awsops/s3` | 버킷 TreeMap, 검색, IAM 분석 (TreeMap, search, IAM) |
-| | RDS | `/awsops/rds` | 인스턴스, SG 체이닝, 메트릭 (SG chaining, metrics) |
-| | DynamoDB | `/awsops/dynamodb` | 테이블 (Tables) |
-| | ElastiCache | `/awsops/elasticache` | 클러스터, SG, 메트릭 (Clusters, SG, metrics) |
-| | OpenSearch | `/awsops/opensearch` | 도메인, 암호화, VPC, 클러스터 구성 (Domains, encryption, VPC, cluster config) |
-| | MSK | `/awsops/msk` | Kafka 클러스터, 브로커 노드, CPU/메모리/네트워크 메트릭 (Clusters, broker nodes, metrics) |
-| **Monitoring** | Monitoring | `/awsops/monitoring` | CPU, 메모리, 네트워크, Disk I/O (날짜 범위) |
-| | CloudWatch | `/awsops/cloudwatch` | 알람 (Alarms) |
-| | CloudTrail | `/awsops/cloudtrail` | 트레일, 이벤트 (Trails, events) |
-| | Cost | `/awsops/cost` | 비용 분석, MSP 자동 감지, 스냅샷 폴백 (Cost analysis, MSP auto-detect, snapshot fallback) |
-| | Resource Inventory | `/awsops/inventory` | 리소스 수량 추이, 비용 영향 추정 (Resource count trends, cost impact estimation) |
-| **Security** | IAM | `/awsops/iam` | 사용자, 역할, 트러스트 정책 (Users, roles, trust policies) |
-| | Security | `/awsops/security` | Public S3, Open SG, Unencrypted EBS, CVE |
-| | CIS Compliance | `/awsops/compliance` | CIS v1.5~v4.0 벤치마크 (431 controls) |
+- a developer workstation for `local`
+- an existing internal development server for `dev`
+- an existing AWS VM for `prod`
 
-## 사전 요구 사항 / Prerequisites
+Network access, VPC endpoints, IAM roles, credentials, DNS, and VM provisioning must already exist.
 
-- 관리자 권한의 AWS 계정 (AWS Account with admin access)
-- EC2 인스턴스 (Amazon Linux 2023, t3.medium+) (EC2 Instance)
+## Prerequisites
+
 - Node.js 20+
-- Docker
+- Python 3.11+
 - AWS CLI v2
-- kubectl + kubeconfig (K8s 기능에 필요) (for K8s features)
-- AWS 자격 증명 설정 완료 (AWS credentials configured)
+- Steampipe and the AWS plugin
+- Powerpipe if CIS benchmark pages are used
+- kubectl if Kubernetes pages are used
+- `~/.aws/credentials` profiles for AWSops and Bedrock
+- Existing approved VPC endpoint URLs or private DNS
 
----
+## 1. Configure AWS Profiles
 
-## 설치 단계 / Installation Steps
-
-### 빠른 설치 (일괄 실행) / Quick Install (All-in-One)
+Example local profile checks:
 
 ```bash
-# 다운로드 후 실행 (Download and run)
-curl -sL https://raw.githubusercontent.com/your-repo/awsops/main/scripts/install.sh | bash
+aws sts get-caller-identity \
+  --profile awsops-local-profile \
+  --endpoint-url https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com
 ```
 
-### 또는 아래의 단계별 가이드를 따르세요. / Or follow the step-by-step guide below.
+Bedrock uses its own profile when required:
+
+```bash
+AWS_PROFILE=bedrock-local-profile aws bedrock-runtime list-foundation-models \
+  --region ap-northeast-2 \
+  --endpoint-url https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com
+```
+
+## 2. Configure AWSops
+
+```bash
+mkdir -p data
+cp docs/examples/config.vm-private.example.json data/config.json
+```
+
+Edit:
+
+- `activeEnvironment`
+- `bedrockProfile`
+- `awsProfile`
+- `endpointUrls`
+- `accounts`
+
+Use `activeEnvironment: "local"` for workstation testing.
+
+## 3. Install Host Runtime
+
+```bash
+bash scripts/01-install-base.sh
+bash scripts/02-setup-nextjs.sh
+```
+
+These scripts install application runtime dependencies on the host. They do not create AWS resources.
+
+## 4. Build and Start Dashboard
+
+```bash
+bash scripts/03-build-deploy.sh
+```
+
+For local development:
+
+```bash
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://127.0.0.1:3000/awsops
+```
+
+## 5. Start Local Private AI Agent
+
+```bash
+bash scripts/13-start-private-agent.sh
+```
+
+Verify:
+
+```bash
+bash scripts/13-verify-private-agent.sh
+```
+
+## 6. Optional Kubernetes Access
+
+If Kubernetes pages are used, kubeconfig must already be approved. You may update local kubeconfig for an existing cluster:
+
+```bash
+bash scripts/04-setup-eks-access.sh
+```
+
+Do not use AWSops to create EKS clusters or IAM roles.
+
+## 7. General Verification
+
+```bash
+bash scripts/10-verify.sh
+```
+
+Private runtime unit tests:
+
+```bash
+python3 -m unittest discover -s tests/private -p 'test_*.py' -v
+```
+
+## Removed Deployment Paths
+
+This branch intentionally excludes:
+
+- `infra-cdk/`
+- CDK deploy/update scripts
+- Cognito setup scripts
+- CloudFront/Lambda@Edge setup scripts
+- AgentCore runtime/gateway/memory/code-interpreter setup scripts
+- ECR/Lambda/IAM creation scripts
+
+If a future environment needs any of those resources, create them outside AWSops through the approved internal process and add only the resulting profile or endpoint metadata to `data/config.json`.
