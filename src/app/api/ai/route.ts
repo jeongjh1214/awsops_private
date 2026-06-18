@@ -38,7 +38,7 @@ function getCodeInterpreterName(): string {
   return config.codeInterpreterName || '';
 }
 
-function useLocalPrivateAgent(): boolean {
+function shouldUseLocalPrivateAgent(): boolean {
   const config = getConfig();
   return config.agent?.provider === 'local-mcp-langgraph';
 }
@@ -989,8 +989,7 @@ export async function POST(request: NextRequest) {
   if (!messages || !Array.isArray(messages) || messages.length === 0)
     return NextResponse.json({ error: 'Messages required' }, { status: 400 });
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  if (useLocalPrivateAgent()) {
+  if (shouldUseLocalPrivateAgent()) {
     return streamLocalPrivateAgent(reqBody);
   }
 
