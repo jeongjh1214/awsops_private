@@ -267,15 +267,17 @@ export class AwsopsStack extends cdk.Stack {
       resources: ['*'],
     }));
 
-    // CloudFront + Lambda@Edge management (08-setup-cloudfront-auth.sh)
-    ec2Role.addToPolicy(new iam.PolicyStatement({
-      actions: [
-        'cloudfront:GetDistribution',
-        'cloudfront:GetDistributionConfig',
-        'cloudfront:UpdateDistribution',
-      ],
-      resources: [`arn:aws:cloudfront::${this.account}:distribution/*`],
-    }));
+    if (!privateMode) {
+      // CloudFront + Lambda@Edge management (08-setup-cloudfront-auth.sh)
+      ec2Role.addToPolicy(new iam.PolicyStatement({
+        actions: [
+          'cloudfront:GetDistribution',
+          'cloudfront:GetDistributionConfig',
+          'cloudfront:UpdateDistribution',
+        ],
+        resources: [`arn:aws:cloudfront::${this.account}:distribution/*`],
+      }));
+    }
 
     // -------------------------------------------------------
     // EC2 Instance (Private Subnet, ARM64 Graviton by default)
@@ -299,7 +301,7 @@ export class AwsopsStack extends cdk.Stack {
       '# System update',
       'dnf update -y --allowerasing',
       'dnf install -y --allowerasing curl jq tar gzip python3 python3-pip',
-      'pip3 install boto3 click bedrock-agentcore',
+      privateMode ? 'pip3 install boto3 click' : 'pip3 install boto3 click bedrock-agentcore',
       '',
       '# Development tools (required for native npm modules)',
       'dnf groupinstall -y "Development Tools" || dnf install -y gcc gcc-c++ make || echo "[WARN] Dev tools install failed"',

@@ -7,7 +7,7 @@ AWSops 대시보드 CloudFormation 인프라를 CDK로 재구성한 프로젝트
 
 | Stack | Description |
 |-------|-------------|
-| `AwsopsStack` | VPC, ALB, EC2, CloudFront, SSM endpoints |
+| `AwsopsStack` | VPC, ALB, EC2; public mode also creates CloudFront and SSM endpoints |
 | `AwsopsCognitoStack` | Cognito User Pool, Lambda@Edge auth (us-east-1) |
 | `AwsopsAgentCoreStack` | AgentCore placeholder (deploy via script) |
 
