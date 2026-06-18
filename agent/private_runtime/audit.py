@@ -10,18 +10,40 @@ SECRET_KEYS = {
     "secret",
     "secretkey",
     "secretaccesskey",
+    "awssecretaccesskey",
+    "apikey",
+    "apitoken",
+    "accesstoken",
     "password",
     "token",
     "sessiontoken",
+    "securitytoken",
+    "xamzsecuritytoken",
     "authorization",
 }
+
+SECRET_SUBSTRINGS = {
+    "secret",
+    "password",
+    "token",
+    "authorization",
+}
+
+
+def _normalized_key(key: Any) -> str:
+    return "".join(character for character in str(key).lower() if character.isalnum())
+
+
+def _is_secret_key(key: Any) -> bool:
+    normalized = _normalized_key(key)
+    return normalized in SECRET_KEYS or any(part in normalized for part in SECRET_SUBSTRINGS)
 
 
 def _redact(value: Any) -> Any:
     if isinstance(value, dict):
         result = {}
         for key, item in value.items():
-            if key.lower() in SECRET_KEYS:
+            if _is_secret_key(key):
                 result[key] = "[REDACTED]"
             else:
                 result[key] = _redact(item)
