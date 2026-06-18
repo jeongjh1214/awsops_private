@@ -39,10 +39,20 @@ async def health() -> dict[str, Any]:
 
 async def _stream_scaffold_response(request: ChatRequest):
     last = request.messages[-1].content if request.messages else ""
+    content = f"Private agent scaffold received: {last[:120]}"
+    done_data: dict[str, Any] = {
+        "content": content,
+        "route": request.route or "general",
+        "via": "private-langgraph-api",
+        "queriedResources": [],
+    }
+    if request.accountId:
+        done_data["accountId"] = request.accountId
+
     events = [
         {"type": "status", "data": {"message": "private LangGraph API connected"}},
-        {"type": "delta", "data": {"text": f"Private agent scaffold received: {last[:120]}"}},
-        {"type": "done", "data": {"route": request.route or "general"}},
+        {"type": "chunk", "data": {"delta": content}},
+        {"type": "done", "data": done_data},
     ]
     for event in events:
         yield f"event: {event['type']}\n"
