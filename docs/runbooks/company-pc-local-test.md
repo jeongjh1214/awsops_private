@@ -38,6 +38,14 @@ bash scripts/15-install-vendored-steampipe-aws-plugin.sh
 
 The vendored package is `vendor/steampipe/aws/v1.31.0/darwin_arm64/steampipe_postgres_aws.pg15.darwin_arm64.tar.gz`. It is only for matching Darwin arm64 machines with PostgreSQL 15.
 
+The vendored installer needs `pg_config` because Steampipe plugins are PostgreSQL FDW extensions. If it is not on `PATH`, the script searches common Steampipe and Homebrew locations. You can also check manually:
+
+```bash
+find ~/.steampipe -name pg_config -type f
+brew install postgresql@15
+export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
+```
+
 ## Configure AWSops
 
 ```bash
