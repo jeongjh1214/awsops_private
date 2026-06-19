@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Callable, Iterable
+from urllib.parse import urlparse
 
 
 DEFAULT_MODEL_ID = "global.anthropic.claude-sonnet-4-6"
@@ -22,6 +23,25 @@ def resolve_bedrock_model_id(configured_model_id: str | None, request_model: str
         if model_id:
             return MODEL_ALIASES.get(model_id, model_id)
     return DEFAULT_MODEL_ID
+
+
+def format_bedrock_error(error: BaseException | str, endpoint_url: str | None = None) -> str:
+    message = str(error)
+    normalized = message.lower()
+    if "unknownoperationexception" not in normalized or "invokemodelwithresponsestream" not in normalized:
+        return message
+
+    endpoint_hint = ""
+    if endpoint_url:
+        hostname = urlparse(endpoint_url).netloc or endpoint_url
+        endpoint_hint = f" Current endpoint host: {hostname}."
+
+    return (
+        f"{message} Bedrock Runtime returned UnknownOperationException for InvokeModelWithResponseStream. "
+        "Verify data/config.json endpointUrls[\"bedrock-runtime\"] points to a Bedrock Runtime VPCE "
+        "hostname that contains bedrock-runtime, not the Bedrock control-plane endpoint."
+        f"{endpoint_hint}"
+    )
 
 
 def _message_value(message: Any, key: str) -> Any:

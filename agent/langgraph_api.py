@@ -10,7 +10,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agent.private_runtime.aws_clients import AwsClientFactory
-from agent.private_runtime.bedrock_chat import resolve_bedrock_model_id, stream_anthropic_response
+from agent.private_runtime.bedrock_chat import (
+    format_bedrock_error,
+    resolve_bedrock_model_id,
+    stream_anthropic_response,
+)
 from agent.private_runtime.config import load_private_config
 from agent.private_runtime.limits import RuntimeLimits
 
@@ -89,7 +93,11 @@ async def _stream_bedrock_response(request: ChatRequest):
                     done_data["accountId"] = request.accountId
                 publish("done", done_data)
             except Exception as exc:
-                publish("error", {"error": str(exc), "model": model_id, "via": "private-langgraph-api"})
+                publish("error", {
+                    "error": format_bedrock_error(exc, bedrock_context["endpointUrl"]),
+                    "model": model_id,
+                    "via": "private-langgraph-api",
+                })
 
         task = asyncio.create_task(asyncio.to_thread(invoke))
         while True:

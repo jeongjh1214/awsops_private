@@ -38,10 +38,18 @@ aws sts get-caller-identity \
 Bedrock uses its own profile when required:
 
 ```bash
-AWS_PROFILE=bedrock-local-profile aws bedrock-runtime list-foundation-models \
+AWS_PROFILE=bedrock-local-profile aws bedrock-runtime invoke-model \
   --region ap-northeast-2 \
-  --endpoint-url https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com
+  --endpoint-url https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com \
+  --model-id '<model-id-or-inference-profile-arn>' \
+  --content-type application/json \
+  --accept application/json \
+  --cli-binary-format raw-in-base64-out \
+  --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":8,"messages":[{"role":"user","content":"ping"}]}' \
+  /tmp/awsops-bedrock-response.json
 ```
+
+The endpoint URL above must be a Bedrock Runtime VPCE URL. The hostname should contain `bedrock-runtime`.
 
 ## 2. Configure AWSops
 

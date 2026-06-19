@@ -2,6 +2,7 @@ import json
 import unittest
 
 from agent.private_runtime.bedrock_chat import (
+    format_bedrock_error,
     resolve_bedrock_model_id,
     stream_anthropic_response,
 )
@@ -74,6 +75,19 @@ class BedrockChatTests(unittest.TestCase):
         self.assertEqual(result["content"], "hello")
         self.assertEqual(result["inputTokens"], 11)
         self.assertEqual(result["outputTokens"], 7)
+
+    def test_unknown_operation_error_points_to_runtime_endpoint(self):
+        error = format_bedrock_error(
+            Exception(
+                "An error occured 404 when calling the invokemodelwithresponsestream operation: "
+                "<UnknownOperationException>"
+            ),
+            "https://vpce-12345.bedrock.ap-northeast-2.vpce.amazonaws.com",
+        )
+
+        self.assertIn("bedrock-runtime", error)
+        self.assertIn("endpointUrls[\"bedrock-runtime\"]", error)
+        self.assertIn("vpce-12345.bedrock.ap-northeast-2.vpce.amazonaws.com", error)
 
 
 if __name__ == "__main__":

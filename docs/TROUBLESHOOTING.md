@@ -34,12 +34,26 @@ aws sts get-caller-identity \
 For Bedrock:
 
 ```bash
-AWS_PROFILE=bedrock-local-profile aws bedrock-runtime list-foundation-models \
+AWS_PROFILE=bedrock-local-profile aws bedrock-runtime invoke-model \
   --region ap-northeast-2 \
-  --endpoint-url https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com
+  --endpoint-url https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com \
+  --model-id '<model-id-or-inference-profile-arn>' \
+  --content-type application/json \
+  --accept application/json \
+  --cli-binary-format raw-in-base64-out \
+  --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":8,"messages":[{"role":"user","content":"ping"}]}' \
+  /tmp/awsops-bedrock-response.json
 ```
 
 If TLS hostname verification fails, use the VPCE DNS hostname in `endpointUrls`. Do not replace the hostname with an arbitrary private IP.
+
+For AI Assistant, confirm the private agent is using the expected Bedrock profile and Runtime endpoint:
+
+```bash
+curl -fsS http://127.0.0.1:7000/health | python3 -m json.tool
+```
+
+`bedrockEndpointUrl` must point to the Bedrock Runtime endpoint. The VPCE hostname should contain `bedrock-runtime`; a control-plane `bedrock` endpoint can return `UnknownOperationException` for `InvokeModelWithResponseStream`.
 
 ## Private Agent Does Not Start
 
@@ -102,6 +116,15 @@ Then check `data/config.json`:
 - `agent.langgraphApiUrl` must match the local service URL
 - `environments.<active>.bedrockProfile` must exist in `~/.aws/credentials`
 - explicit `endpointUrls` must include required services in explicit mode
+- `endpointUrls["bedrock-runtime"]` must be a Bedrock Runtime VPCE URL, not a Bedrock control-plane URL
+
+Bypass the dashboard and test the private agent directly:
+
+```bash
+curl -N --max-time 120 -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"health check"}]}' \
+  http://127.0.0.1:7000/chat/stream
+```
 
 ## A Script Tries To Create AWS Resources
 
