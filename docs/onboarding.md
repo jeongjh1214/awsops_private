@@ -23,8 +23,10 @@ If a resource is needed, request it through the approved platform/security proce
 2. `docs/architecture.md`
 3. `docs/INSTALL_GUIDE.md`
 4. `docs/examples/config.vm-private.example.json`
-5. `agent/private_runtime/config.py`
-6. `src/lib/app-config.ts`
+5. `docs/runbooks/company-pc-local-test.md`
+6. `docs/examples/steampipe-aws.spc.example`
+7. `agent/private_runtime/config.py`
+8. `src/lib/app-config.ts`
 
 ## Local Test Checklist
 
@@ -36,6 +38,7 @@ If a resource is needed, request it through the approved platform/security proce
 6. Run `npm run dev`.
 7. Run `bash scripts/13-start-private-agent.sh`.
 8. Open `http://127.0.0.1:3000/awsops`.
+9. If something is missing, run `bash scripts/14-check-local-private.sh`.
 
 ## Development Rules
 

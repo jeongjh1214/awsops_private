@@ -1,0 +1,13 @@
+connection "aws" {
+  plugin  = "aws"
+  profile = "awsops-local-profile"
+  regions = ["ap-northeast-2"]
+
+  ignore_error_codes = [
+    "AccessDenied",
+    "AccessDeniedException",
+    "NotAuthorized",
+    "UnauthorizedAccess",
+    "AuthorizationError"
+  ]
+}

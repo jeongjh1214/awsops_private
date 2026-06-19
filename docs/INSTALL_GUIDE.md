@@ -23,6 +23,8 @@ Network access, VPC endpoints, IAM roles, credentials, DNS, and VM provisioning 
 - `~/.aws/credentials` profiles for AWSops and Bedrock
 - Existing approved VPC endpoint URLs or private DNS
 
+For company workstation testing, also read `docs/runbooks/company-pc-local-test.md`.
+
 ## 1. Configure AWS Profiles
 
 Example local profile checks:
@@ -57,6 +59,8 @@ Edit:
 - `accounts`
 
 Use `activeEnvironment: "local"` for workstation testing.
+
+`npm run dev` is the Next.js development server command. It does not select the AWSops `dev` environment. Environment selection comes only from `data/config.json`.
 
 ## 3. Install Host Runtime
 
@@ -118,6 +122,12 @@ Private runtime unit tests:
 
 ```bash
 python3 -m unittest discover -s tests/private -p 'test_*.py' -v
+```
+
+Company workstation diagnostics:
+
+```bash
+bash scripts/14-check-local-private.sh
 ```
 
 ## Removed Deployment Paths
