@@ -126,6 +126,17 @@ curl -N --max-time 120 -H 'Content-Type: application/json' \
   http://127.0.0.1:7000/chat/stream
 ```
 
+## AI Chat Says It Cannot Access Tools
+
+In private VM mode, resource inventory questions such as EC2, VPC, S3, RDS, and Lambda should be handled by the Next.js AI API through Steampipe SQL, then analyzed by Bedrock. Confirm Steampipe is running and the AWS plugin tables exist:
+
+```bash
+steampipe service status
+steampipe query "select instance_id, instance_state from aws_ec2_instance limit 5"
+```
+
+Then restart the dashboard process and ask again. The server log should include an `[AI] AWS context` line showing the active environment, Bedrock profile, Bedrock Runtime endpoint, and model ID used by `/api/ai`.
+
 ## A Script Tries To Create AWS Resources
 
 Stop and remove that script from this branch. Private VM mode must not create AWS resources. Request the resource through the approved internal process and configure only the resulting metadata in `data/config.json`.

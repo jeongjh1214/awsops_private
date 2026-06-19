@@ -4,6 +4,8 @@
 // 흐름: 의도 분류 (레지스트리 기반) → 핸들러 라우팅 → 폴백
 import { NextRequest, NextResponse } from 'next/server';
 import { BedrockRuntimeClient, InvokeModelCommand, InvokeModelWithResponseStreamCommand, ConverseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
+import { fromIni } from '@aws-sdk/credential-provider-ini';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import {
   BedrockAgentCoreClient,
   InvokeAgentRuntimeCommand,
@@ -22,6 +24,11 @@ import type { DatasourceType } from '@/lib/app-config';
 import { queryDatasource } from '@/lib/datasource-client';
 import { detectDatasourceTypes, DATASOURCE_TYPES } from '@/lib/datasource-registry';
 import { DATASOURCE_QUERY_PROMPTS } from '@/lib/datasource-prompts';
+import {
+  getPrivateBedrockRuntimeContext,
+  resolvePrivateBedrockModelId,
+  shouldDelegateRouteToLocalPrivateAgent,
+} from '@/lib/private-ai-runtime';
 
 // Service configuration — config 파일에서 읽거나 자동 감지
 // Service config — read from data/config.json or auto-detect
@@ -38,14 +45,8 @@ function getCodeInterpreterName(): string {
   return config.codeInterpreterName || '';
 }
 
-function shouldUseLocalPrivateAgent(): boolean {
-  const config = getConfig();
-  return config.agent?.provider === 'local-mcp-langgraph';
-}
-
-function getLangGraphApiUrl(): string {
-  const config = getConfig();
-  return config.agent?.langgraphApiUrl || 'http://127.0.0.1:7000';
+function getAgentProvider(): string | undefined {
+  return getConfig().agent?.provider;
 }
 
 // Available Bedrock models / 사용 가능한 Bedrock 모델
@@ -55,8 +56,45 @@ const MODELS: Record<string, string> = {
   'opus-4.6': 'global.anthropic.claude-opus-4-6-v1',
 };
 
+function getAiBedrockContext() {
+  return getPrivateBedrockRuntimeContext(getConfig());
+}
+
+function getAiModelId(modelKey?: string): string {
+  return resolvePrivateBedrockModelId(
+    getAiBedrockContext().modelId,
+    modelKey,
+    MODELS,
+    'sonnet-4.6',
+  );
+}
+
+function getBedrockClient(): BedrockRuntimeClient {
+  const context = getAiBedrockContext();
+  return new BedrockRuntimeClient({
+    region: BEDROCK_REGION,
+    credentials: context.profile ? fromIni({ profile: context.profile }) : undefined,
+    endpoint: context.endpointUrl,
+    requestHandler: new NodeHttpHandler({
+      requestTimeout: 90_000,
+      connectionTimeout: 5_000,
+    }),
+    maxAttempts: 2,
+  });
+}
+
+function logAiAwsContext(route?: string): void {
+  const context = getAiBedrockContext();
+  console.log(
+    `[AI] AWS context route=${route || '(unknown)'} ` +
+    `activeEnvironment=${context.activeEnvironment} ` +
+    `bedrockProfile=${context.profile || '(default)'} ` +
+    `bedrockEndpoint=${context.endpointUrl || '(private DNS/default)'} ` +
+    `modelId=${getAiModelId()}`
+  );
+}
+
 // AWS SDK clients / AWS SDK 클라이언트
-const bedrockClient = new BedrockRuntimeClient({ region: BEDROCK_REGION });
 const agentCoreClient = new BedrockAgentCoreClient({ region: AGENTCORE_REGION });
 
 // ============================================================================
@@ -416,8 +454,8 @@ async function classifyIntent(messages: Array<{role: string; content: string}>):
       messages: recentMessages.map(m => ({ role: m.role, content: m.content })),
     });
 
-    const response = await bedrockClient.send(new InvokeModelCommand({
-      modelId: MODELS['sonnet-4.6'],
+    const response = await getBedrockClient().send(new InvokeModelCommand({
+      modelId: getAiModelId(),
       contentType: 'application/json',
       accept: 'application/json',
       body: new TextEncoder().encode(body),
@@ -521,8 +559,8 @@ async function generateSQL(messages: Array<{role: string; content: string}>, acc
       system: systemPrompt,
       messages: messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
     });
-    const response = await bedrockClient.send(new InvokeModelCommand({
-      modelId: MODELS['sonnet-4.6'],
+    const response = await getBedrockClient().send(new InvokeModelCommand({
+      modelId: getAiModelId(),
       contentType: 'application/json',
       accept: 'application/json',
       body: new TextEncoder().encode(body),
@@ -560,8 +598,8 @@ async function generateDatasourceQuery(
       system: DATASOURCE_QUERY_PROMPTS[dsType],
       messages: messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
     });
-    const response = await bedrockClient.send(new InvokeModelCommand({
-      modelId: MODELS['sonnet-4.6'],
+    const response = await getBedrockClient().send(new InvokeModelCommand({
+      modelId: getAiModelId(),
       contentType: 'application/json',
       accept: 'application/json',
       body: new TextEncoder().encode(body),
@@ -876,7 +914,7 @@ async function streamBedrockToSSE(
     messages: params.messages,
   });
 
-  const response = await bedrockClient.send(new InvokeModelWithResponseStreamCommand({
+  const response = await getBedrockClient().send(new InvokeModelWithResponseStreamCommand({
     modelId: params.modelId,
     contentType: 'application/json',
     accept: 'application/json',
@@ -922,97 +960,6 @@ function recordAndSave(p: {
   saveConversation({ id: `${Date.now()}`, userId: p.userId, timestamp: new Date().toISOString(), route: p.route, gateway: p.gateway, question: p.question.slice(0, 100), summary: p.summary.slice(0, 200), usedTools: p.usedTools, responseTimeMs: p.responseTimeMs, via: p.via }).catch(() => {});
 }
 
-async function streamLocalPrivateAgent(requestBody: any): Promise<Response> {
-  let upstream: Response;
-  try {
-    upstream = await fetch(`${getLangGraphApiUrl()}/chat/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: `Local private agent unavailable: ${err.message || 'connection failed'}` },
-      { status: 502 }
-    );
-  }
-
-  if (!upstream.ok || !upstream.body) {
-    return NextResponse.json(
-      { error: `Local private agent unavailable: HTTP ${upstream.status}` },
-      { status: 502 }
-    );
-  }
-
-  return new Response(upstream.body, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-    },
-  });
-}
-
-async function invokeLocalPrivateAgentJson(requestBody: any): Promise<NextResponse> {
-  let upstream: Response;
-  try {
-    upstream = await fetch(`${getLangGraphApiUrl()}/chat/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-      cache: 'no-store',
-    });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: `Local private agent unavailable: ${err.message || 'connection failed'}` },
-      { status: 502 }
-    );
-  }
-
-  if (!upstream.ok) {
-    return NextResponse.json(
-      { error: `Local private agent unavailable: HTTP ${upstream.status}` },
-      { status: 502 }
-    );
-  }
-
-  const raw = await upstream.text();
-  let eventType = '';
-  let content = '';
-  let finalPayload: Record<string, any> | null = null;
-
-  for (const line of raw.split(/\r?\n/)) {
-    if (line.startsWith('event: ')) {
-      eventType = line.slice(7).trim();
-      continue;
-    }
-    if (!line.startsWith('data: ') || !eventType) continue;
-
-    try {
-      const data = JSON.parse(line.slice(6));
-      if (eventType === 'chunk') {
-        content += data.delta || '';
-      } else if (eventType === 'done') {
-        finalPayload = data;
-      } else if (eventType === 'error') {
-        return NextResponse.json({ error: data.error || 'Local private agent failed' }, { status: 502 });
-      }
-    } catch {}
-    eventType = '';
-  }
-
-  if (finalPayload) return NextResponse.json(finalPayload);
-  return NextResponse.json({
-    content,
-    model: requestBody.model,
-    queriedResources: [],
-    usedTools: [],
-    via: 'Local MCP + LangGraph',
-    route: 'local-private-agent',
-  });
-}
-
 // POST handler — SSE streaming with step-by-step progress events
 // POST 핸들러 — 단계별 진행 이벤트를 포함한 SSE 스트리밍
 // ============================================================================
@@ -1056,13 +1003,6 @@ export async function POST(request: NextRequest) {
   if (!messages || !Array.isArray(messages) || messages.length === 0)
     return NextResponse.json({ error: 'Messages required' }, { status: 400 });
 
-  if (shouldUseLocalPrivateAgent()) {
-    if (!useStream) {
-      return invokeLocalPrivateAgentJson(reqBody);
-    }
-    return streamLocalPrivateAgent(reqBody);
-  }
-
   // Cognito 사용자 정보 추출 / Extract Cognito user from JWT
   const currentUser = getUserFromRequest(request);
 
@@ -1095,6 +1035,7 @@ export async function POST(request: NextRequest) {
         const config = ROUTE_REGISTRY[route];
         const lastMessage = messages[messages.length - 1]?.content || '';
         const isMulti = routes.length > 1;
+        logAiAwsContext(route);
         if (isMulti) {
           send('status', { step: 'classified', route, routes, message: STATUS.multiRoute(routes.map(r => ROUTE_REGISTRY[r]?.display).join(' + ')) });
         } else {
@@ -1102,11 +1043,10 @@ export async function POST(request: NextRequest) {
         }
 
         // Step 2: Route to handler / 2단계: 핸들러로 라우팅
-
         // Handler: Code Interpreter / 핸들러: 코드 인터프리터
-        if (config.handler === 'code') {
+        if (config.handler === 'code' && !shouldDelegateRouteToLocalPrivateAgent(getAgentProvider(), config)) {
           send('status', { step: 'generating', message: STATUS.codeGenerating });
-          const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+          const modelId = getAiModelId(modelKey);
           const codeSystemPrompt = SYSTEM_PROMPT + `\n\nThe user wants to execute code. If they provide code, wrap it in a \`\`\`python code block. If they describe a task, generate Python code to accomplish it and wrap it in a \`\`\`python code block. Always include print statements to show results.`;
           // Stream code generation / 코드 생성 스트리밍
           const codeStreamResult = await streamBedrockToSSE(
@@ -1187,7 +1127,7 @@ export async function POST(request: NextRequest) {
               .map(r => r.value);
 
             if (successResults.length > 0) {
-              const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+              const modelId = getAiModelId(modelKey);
               const isMultiDs = successResults.length > 1;
               send('status', { step: 'datasource-analyzing', message: isMultiDs
                 ? `${successResults.length}개 데이터소스 상관 분석 중...`
@@ -1242,7 +1182,7 @@ export async function POST(request: NextRequest) {
               ? `🤖 Analyzing with ${collector.displayName}...`
               : `🤖 ${collector.displayName} 분석 중...` });
 
-            const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+            const modelId = getAiModelId(modelKey);
             const bedrockMessages = messages.slice(-10).map((m: any) => ({ role: m.role, content: m.content }));
             bedrockMessages[bedrockMessages.length - 1].content += context;
 
@@ -1272,7 +1212,7 @@ export async function POST(request: NextRequest) {
         // Handler: SQL (aws-data) / SQL 핸들러
         if (config.handler === 'sql') {
           send('status', { step: 'sql-generating', message: STATUS.sqlGenerating });
-          const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+          const modelId = getAiModelId(modelKey);
           let sql = await generateSQL(messages, accountId, account?.alias);
           let queryResult: { data: string; rowCount: number; error?: string } | null = null;
 
@@ -1377,7 +1317,7 @@ export async function POST(request: NextRequest) {
           } else {
             // 모든 Gateway 실패 → Bedrock Direct 스트리밍 폴백 / All gateways failed → Bedrock Direct streaming fallback
             send('status', { step: 'fallback', message: STATUS.gatewayTimeout });
-            const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+            const modelId = getAiModelId(modelKey);
             try {
               const mfStreamResult = await streamBedrockToSSE(
                 { modelId, system: SYSTEM_PROMPT, messages: messages.slice(-10).map((m: any) => ({ role: m.role, content: m.content })) },
@@ -1403,43 +1343,45 @@ export async function POST(request: NextRequest) {
 
         // Single route: existing logic / 단일 라우트: 기존 로직
         const gateway = config.gateway || 'ops';
-        send('status', { step: 'agentcore', message: STATUS.agentcoreCall(config.display) });
+        if (!shouldDelegateRouteToLocalPrivateAgent(getAgentProvider(), config)) {
+          send('status', { step: 'agentcore', message: STATUS.agentcoreCall(config.display) });
 
-        // Keepalive: send periodic status during AgentCore call to prevent CloudFront timeout
-        // Keepalive: AgentCore 호출 중 주기적 상태 전송으로 CloudFront 타임아웃 방지
-        let keepaliveCount = 0;
-        const keepaliveInterval = setInterval(() => {
-          keepaliveCount++;
-          send('status', { step: 'agentcore', message: STATUS.agentcoreProgress(config.display, keepaliveCount * 15) });
-        }, 15000);
+          // Keepalive: send periodic status during AgentCore call to prevent CloudFront timeout
+          // Keepalive: AgentCore 호출 중 주기적 상태 전송으로 CloudFront 타임아웃 방지
+          let keepaliveCount = 0;
+          const keepaliveInterval = setInterval(() => {
+            keepaliveCount++;
+            send('status', { step: 'agentcore', message: STATUS.agentcoreProgress(config.display, keepaliveCount * 15) });
+          }, 15000);
 
-        const agentResponse = await invokeAgentCore(messages, gateway, accountId, account?.alias, config.skill);
-        clearInterval(keepaliveInterval);
+          const agentResponse = await invokeAgentCore(messages, gateway, accountId, account?.alias, config.skill);
+          clearInterval(keepaliveInterval);
 
-        if (agentResponse) {
-          const usedTools = extractUsedTools(agentResponse);
-          const cleanedResponse = agentResponse
-            .replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, '')
-            .replace(/<tool_response>[\s\S]*?<\/tool_response>\s*/g, '')
-            .trim();
-          const responseTimeMs = Date.now() - callStartTime;
-          const finalContent = cleanedResponse || agentResponse;
-          // Simulate streaming for AgentCore responses / AgentCore 응답 타이핑 시뮬레이션
-          await simulateStreaming(finalContent, send);
-          recordAndSave({ route, gateway, responseTimeMs, usedTools, success: true, via: `AgentCore → ${config.display}`, question: lastMessage, summary: finalContent, userId: currentUser.email, inputTokens: totalInputTokens, outputTokens: totalOutputTokens, model: modelKey || 'sonnet-4.6' });
-          send('done', {
-            content: finalContent, model: 'sonnet-4.6',
-            via: `AgentCore → ${config.display}`, queriedResources: [`${gateway}-gateway`], route, routes,
-            usedTools,
-            inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
-          });
-          controller.close();
-          return;
+          if (agentResponse) {
+            const usedTools = extractUsedTools(agentResponse);
+            const cleanedResponse = agentResponse
+              .replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, '')
+              .replace(/<tool_response>[\s\S]*?<\/tool_response>\s*/g, '')
+              .trim();
+            const responseTimeMs = Date.now() - callStartTime;
+            const finalContent = cleanedResponse || agentResponse;
+            // Simulate streaming for AgentCore responses / AgentCore 응답 타이핑 시뮬레이션
+            await simulateStreaming(finalContent, send);
+            recordAndSave({ route, gateway, responseTimeMs, usedTools, success: true, via: `AgentCore → ${config.display}`, question: lastMessage, summary: finalContent, userId: currentUser.email, inputTokens: totalInputTokens, outputTokens: totalOutputTokens, model: modelKey || 'sonnet-4.6' });
+            send('done', {
+              content: finalContent, model: 'sonnet-4.6',
+              via: `AgentCore → ${config.display}`, queriedResources: [`${gateway}-gateway`], route, routes,
+              usedTools,
+              inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
+            });
+            controller.close();
+            return;
+          }
         }
 
         // Fallback: Bedrock Direct streaming / 폴백: Bedrock 직접 스트리밍
         send('status', { step: 'fallback', message: STATUS.fallback });
-        const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+        const modelId = getAiModelId(modelKey);
         const fbStreamResult = await streamBedrockToSSE(
           { modelId, system: SYSTEM_PROMPT, messages: messages.slice(-10).map((m: any) => ({ role: m.role, content: m.content })) },
           send,
@@ -1483,15 +1425,19 @@ async function handleSingleRoute(
   const config = ROUTE_REGISTRY[route];
   const lastMessage = messages[messages.length - 1]?.content || '';
 
+  if (shouldDelegateRouteToLocalPrivateAgent(getAgentProvider(), config)) {
+    return null;
+  }
+
   // Code handler / 코드 핸들러
   if (config.handler === 'code') {
-    const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+    const modelId = getAiModelId(modelKey);
     const codeSystemPrompt = SYSTEM_PROMPT + `\n\nThe user wants to execute code. If they provide code, wrap it in a \`\`\`python code block. If they describe a task, generate Python code to accomplish it and wrap it in a \`\`\`python code block. Always include print statements to show results.`;
     const body = JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31', max_tokens: 4096, system: codeSystemPrompt,
       messages: messages.slice(-10).map((m: any) => ({ role: m.role, content: m.content })),
     });
-    const aiResponse = await bedrockClient.send(new InvokeModelCommand({
+    const aiResponse = await getBedrockClient().send(new InvokeModelCommand({
       modelId, contentType: 'application/json', accept: 'application/json',
       body: new TextEncoder().encode(body),
     }));
@@ -1507,7 +1453,7 @@ async function handleSingleRoute(
 
   // SQL handler / SQL 핸들러
   if (config.handler === 'sql') {
-    const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+    const modelId = getAiModelId(modelKey);
     let sql = await generateSQL(messages, accountId, accountAlias);
     let queryResult: { data: string; rowCount: number; error?: string } | null = null;
     for (let attempt = 0; attempt < 2 && sql; attempt++) {
@@ -1528,7 +1474,7 @@ async function handleSingleRoute(
       const body = JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31', max_tokens: 4096, system: SYSTEM_PROMPT, messages: bedrockMessages,
       });
-      const response = await bedrockClient.send(new InvokeModelCommand({
+      const response = await getBedrockClient().send(new InvokeModelCommand({
         modelId, contentType: 'application/json', accept: 'application/json',
         body: new TextEncoder().encode(body),
       }));
@@ -1581,8 +1527,8 @@ async function handleSingleRoute(
     const body = JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31', max_tokens: 4096, system: SYSTEM_PROMPT, messages: bedrockMessages,
     });
-    const response = await bedrockClient.send(new InvokeModelCommand({
-      modelId: MODELS[modelKey || 'sonnet-4.6'], contentType: 'application/json', accept: 'application/json',
+    const response = await getBedrockClient().send(new InvokeModelCommand({
+      modelId: getAiModelId(modelKey), contentType: 'application/json', accept: 'application/json',
       body: new TextEncoder().encode(body),
     }));
     const analysisText = JSON.parse(new TextDecoder().decode(response.body)).content?.[0]?.text || '';
@@ -1606,8 +1552,8 @@ async function handleSingleRoute(
       const body = JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31', max_tokens: 8192, system: collector.analysisPrompt, messages: bedrockMessages,
       });
-      const response = await bedrockClient.send(new InvokeModelCommand({
-        modelId: MODELS[modelKey || 'sonnet-4.6'], contentType: 'application/json', accept: 'application/json',
+      const response = await getBedrockClient().send(new InvokeModelCommand({
+        modelId: getAiModelId(modelKey), contentType: 'application/json', accept: 'application/json',
         body: new TextEncoder().encode(body),
       }));
       const analysisText = JSON.parse(new TextDecoder().decode(response.body)).content?.[0]?.text || '';
@@ -1636,7 +1582,7 @@ async function synthesizeResponses(
   question: string, responses: { route: string; content: string; via: string }[], modelKey?: string, lang?: string
 ): Promise<string> {
   const SYSTEM_PROMPT = getSystemPrompt(lang);
-  const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+  const modelId = getAiModelId(modelKey);
   const parts = responses.map(r => `--- ${r.via} ---\n${r.content}`).join('\n\n');
   const body = JSON.stringify({
     anthropic_version: 'bedrock-2023-05-31',
@@ -1646,7 +1592,7 @@ async function synthesizeResponses(
       { role: 'user', content: `Question: ${question}\n\nMultiple agents responded:\n\n${parts}\n\nPlease synthesize into one comprehensive answer.` },
     ],
   });
-  const response = await bedrockClient.send(new InvokeModelCommand({
+  const response = await getBedrockClient().send(new InvokeModelCommand({
     modelId, contentType: 'application/json', accept: 'application/json',
     body: new TextEncoder().encode(body),
   }));
@@ -1660,10 +1606,10 @@ async function synthesizeResponsesStreaming(
   send: (event: string, data: any) => void, modelKey?: string, lang?: string,
 ): Promise<string> {
   const systemPrompt = getSystemPrompt(lang) + `\n\nYou are synthesizing answers from multiple AWS service agents. Combine them into one coherent, well-structured response. Do not repeat information.`;
-  const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+  const modelId = getAiModelId(modelKey);
   const parts = responses.map(r => `--- ${r.via} ---\n${r.content}`).join('\n\n');
 
-  const response = await bedrockClient.send(new ConverseStreamCommand({
+  const response = await getBedrockClient().send(new ConverseStreamCommand({
     modelId,
     system: [{ text: systemPrompt }],
     messages: [
@@ -1707,12 +1653,12 @@ async function handleNonStreaming(messages: Array<{role: string; content: string
         });
       }
       // Fallback / 폴백
-      const modelId = MODELS[modelKey || 'sonnet-4.6'] || MODELS['sonnet-4.6'];
+      const modelId = getAiModelId(modelKey);
       const body = JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31', max_tokens: 4096, system: SYSTEM_PROMPT,
         messages: messages.slice(-10).map((m: any) => ({ role: m.role, content: m.content })),
       });
-      const response = await bedrockClient.send(new InvokeModelCommand({
+      const response = await getBedrockClient().send(new InvokeModelCommand({
         modelId, contentType: 'application/json', accept: 'application/json',
         body: new TextEncoder().encode(body),
       }));
