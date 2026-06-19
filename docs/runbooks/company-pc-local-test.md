@@ -30,6 +30,14 @@ steampipe --version
 
 If `steampipe --version` is missing, the dashboard can render but resource pages will not work. Most pages query AWS through Steampipe on `127.0.0.1:9193`.
 
+If Steampipe exists but `steampipe plugin install aws` cannot reach the plugin registry, this branch includes a temporary vendored package for macOS arm64 company workstations:
+
+```bash
+bash scripts/15-install-vendored-steampipe-aws-plugin.sh
+```
+
+The vendored package is `vendor/steampipe/aws/v1.31.0/darwin_arm64/steampipe_postgres_aws.pg15.darwin_arm64.tar.gz`. It is only for matching Darwin arm64 machines with PostgreSQL 15.
+
 ## Configure AWSops
 
 ```bash
@@ -143,6 +151,22 @@ Steampipe is not running. Start it with:
 
 ```bash
 steampipe service start --database-listen network --database-port 9193
+```
+
+`aws_ec2_instance does not exist`
+
+The Steampipe AWS plugin is not loaded. Check:
+
+```bash
+steampipe plugin list
+steampipe query "select table_schema, table_name from information_schema.tables where table_name = 'aws_ec2_instance';"
+```
+
+If the plugin registry is blocked on a matching macOS arm64 workstation:
+
+```bash
+bash scripts/15-install-vendored-steampipe-aws-plugin.sh
+steampipe service restart --force
 ```
 
 Initial page loads but resource pages are empty
