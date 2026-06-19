@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { fromIni } from '@aws-sdk/credential-provider-ini';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { collectReportData, formatReportForBedrock } from '@/lib/report-generator';
 import type { ReportData } from '@/lib/report-generator';
@@ -18,13 +20,75 @@ import { randomUUID } from 'crypto';
 // Clients + Constants
 // ============================================================================
 
-const bedrockClient = new BedrockRuntimeClient({ region: 'ap-northeast-2' });
-const s3Client = new S3Client({ region: 'ap-northeast-2' });
-const MODEL_ID = 'global.anthropic.claude-opus-4-6-v1';
+const AWS_REGION = 'ap-northeast-2';
+const MODEL_ALIASES: Record<string, string> = {
+  'sonnet-4.6': 'global.anthropic.claude-sonnet-4-6',
+  'opus-4.6': 'global.anthropic.claude-opus-4-6-v1',
+};
 // Read bucket from config — no hardcoded account IDs
 import { getConfig } from '@/lib/app-config';
 function getReportBucket(): string {
   return getConfig().reportBucket || process.env.REPORT_BUCKET || '';
+}
+
+function getActiveEnvironmentConfig() {
+  const config = getConfig();
+  const active = config.activeEnvironment || 'dev';
+  return config.environments?.[active];
+}
+
+function getEndpointUrl(service: string): string | undefined {
+  const env = getActiveEnvironmentConfig();
+  if (!env || env.endpointMode === 'privateDns') return undefined;
+  return env.endpointUrls?.[service];
+}
+
+function credentialsFromProfile(profile?: string) {
+  return profile ? fromIni({ profile }) : undefined;
+}
+
+function getReportModelId(): string {
+  const configured = getConfig().agent?.modelId || 'global.anthropic.claude-opus-4-6-v1';
+  return MODEL_ALIASES[configured] || configured;
+}
+
+function getBedrockClient(): BedrockRuntimeClient {
+  const env = getActiveEnvironmentConfig();
+  return new BedrockRuntimeClient({
+    region: AWS_REGION,
+    credentials: credentialsFromProfile(env?.bedrockProfile),
+    endpoint: getEndpointUrl('bedrock-runtime'),
+    requestHandler: new NodeHttpHandler({
+      requestTimeout: 90_000,
+      connectionTimeout: 5_000,
+    }),
+    maxAttempts: 2,
+  });
+}
+
+function getS3Client(): S3Client {
+  const env = getActiveEnvironmentConfig();
+  return new S3Client({
+    region: AWS_REGION,
+    credentials: credentialsFromProfile(env?.awsProfile),
+    endpoint: getEndpointUrl('s3'),
+    requestHandler: new NodeHttpHandler({
+      requestTimeout: 60_000,
+      connectionTimeout: 5_000,
+    }),
+    maxAttempts: 2,
+  });
+}
+
+function logReportAwsContext(): void {
+  const env = getActiveEnvironmentConfig();
+  console.log(
+    `[Report] AWS context activeEnvironment=${getConfig().activeEnvironment || 'dev'} ` +
+    `bedrockProfile=${env?.bedrockProfile || '(default)'} ` +
+    `awsProfile=${env?.awsProfile || '(default)'} ` +
+    `bedrockEndpoint=${getEndpointUrl('bedrock-runtime') || '(private DNS/default)'} ` +
+    `modelId=${getReportModelId()}`
+  );
 }
 const REPORT_S3_PREFIX = 'reports/';
 const REPORTS_META_DIR = path.join(process.cwd(), 'data', 'reports');
@@ -278,9 +342,9 @@ async function analyzeSection(
 
   try {
     resetIdleTimer();
-    const resp = await bedrockClient.send(
+    const resp = await getBedrockClient().send(
       new InvokeModelWithResponseStreamCommand({
-        modelId: MODEL_ID,
+        modelId: getReportModelId(),
         contentType: 'application/json',
         accept: 'application/json',
         body: new TextEncoder().encode(body),
@@ -354,6 +418,7 @@ async function generateReportBackground(
 
   // Phase 1: Collect data
   // 1단계: 데이터 수집
+  logReportAwsContext();
   console.log(`[Report] ${reportId} — Phase 1: Collecting data...`);
   updateReportMeta(reportId, {
     progress: { current: 0, total: 15, currentSection: 'data-collection', statusMessage: isEn ? 'Collecting infrastructure data...' : '인프라 데이터 수집 중...', completedSections },
@@ -465,6 +530,7 @@ async function generateReportBackground(
 
   const bucket = getReportBucket();
   if (bucket) {
+    const s3Client = getS3Client();
     // S3 upload + presigned URLs
     s3KeyDocx = `${REPORT_S3_PREFIX}${reportId}.docx`;
     s3KeyMd = `${REPORT_S3_PREFIX}${reportId}.md`;
@@ -673,6 +739,7 @@ export async function GET(request: NextRequest) {
     let downloadUrlMd = meta.downloadUrlMd;
     if (meta.status === 'completed') {
       const refreshPromises: Promise<void>[] = [];
+      const s3Client = getS3Client();
       if (meta.s3KeyDocx) {
         refreshPromises.push((async () => {
           try {
@@ -722,6 +789,7 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+      const s3Client = getS3Client();
       const freshUrl = await getSignedUrl(s3Client, new GetObjectCommand({
         Bucket: getReportBucket(),
         Key: meta.s3KeyDocx,
@@ -762,6 +830,7 @@ export async function GET(request: NextRequest) {
     // Try S3 presigned URL first
     if (meta.s3KeyMd) {
       try {
+        const s3Client = getS3Client();
         const freshUrl = await getSignedUrl(s3Client, new GetObjectCommand({
           Bucket: getReportBucket(), Key: meta.s3KeyMd,
         }), { expiresIn: 60 * 60 });
