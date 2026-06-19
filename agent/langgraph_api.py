@@ -35,10 +35,15 @@ class ChatRequest(BaseModel):
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
+    bedrock_context = aws_clients.bedrock_runtime_context()
     return {
         "status": "ok",
         "activeEnvironment": config.active_environment_name,
         "provider": config.agent.provider,
+        "modelId": config.agent.model_id,
+        "bedrockProfile": bedrock_context["profile"],
+        "bedrockEndpointMode": bedrock_context["endpointMode"],
+        "bedrockEndpointUrl": bedrock_context["endpointUrl"],
         "mcpServerUrl": config.agent.mcp_server_url,
     }
 
@@ -49,7 +54,14 @@ def _sse_event(event: str, data: dict[str, Any]) -> str:
 
 async def _stream_bedrock_response(request: ChatRequest):
     model_id = resolve_bedrock_model_id(config.agent.model_id, request.model)
-    yield _sse_event("status", {"message": "calling private Bedrock Runtime", "model": model_id})
+    bedrock_context = aws_clients.bedrock_runtime_context()
+    yield _sse_event("status", {
+        "message": "calling private Bedrock Runtime",
+        "model": model_id,
+        "bedrockProfile": bedrock_context["profile"],
+        "bedrockEndpointMode": bedrock_context["endpointMode"],
+        "bedrockEndpointUrl": bedrock_context["endpointUrl"],
+    })
 
     async with limits.bedrock:
         loop = asyncio.get_running_loop()

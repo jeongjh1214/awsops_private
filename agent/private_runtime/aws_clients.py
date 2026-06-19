@@ -2,9 +2,17 @@ from __future__ import annotations
 
 from functools import lru_cache
 import boto3
+from botocore.config import Config
 
 from agent.private_runtime.config import PrivateConfig
 from agent.private_runtime.endpoint_resolver import EndpointResolver
+
+
+CLIENT_CONFIG = Config(
+    connect_timeout=5,
+    read_timeout=90,
+    retries={"max_attempts": 2, "mode": "standard"},
+)
 
 
 @lru_cache(maxsize=32)
@@ -17,7 +25,7 @@ def _session(profile_name: str | None, region_name: str):
 @lru_cache(maxsize=128)
 def _client(profile_name: str | None, region_name: str, service: str, endpoint_url: str | None):
     session = _session(profile_name, region_name)
-    kwargs = {"region_name": region_name}
+    kwargs = {"region_name": region_name, "config": CLIENT_CONFIG}
     if endpoint_url:
         kwargs["endpoint_url"] = endpoint_url
     return session.client(service, **kwargs)
@@ -37,6 +45,14 @@ class AwsClientFactory:
             "bedrock-runtime",
             endpoint_url,
         )
+
+    def bedrock_runtime_context(self) -> dict[str, str | None]:
+        return {
+            "profile": self.config.environment.bedrock_profile,
+            "region": self.region_name,
+            "endpointMode": self.config.environment.endpoint_mode,
+            "endpointUrl": self.resolver.url_for("bedrock-runtime"),
+        }
 
     def service_client(self, service: str):
         endpoint_url = self.resolver.url_for(service)

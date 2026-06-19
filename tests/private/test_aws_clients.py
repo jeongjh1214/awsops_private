@@ -29,10 +29,16 @@ class FakeBoto3(types.SimpleNamespace):
         return session
 
 
+class FakeBotocoreConfig:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
 class AwsClientFactoryTests(unittest.TestCase):
     def setUp(self):
         self.fake_boto3 = FakeBoto3()
-        with patch.dict(sys.modules, {"boto3": self.fake_boto3}):
+        fake_botocore_config = types.SimpleNamespace(Config=FakeBotocoreConfig)
+        with patch.dict(sys.modules, {"boto3": self.fake_boto3, "botocore.config": fake_botocore_config}):
             sys.modules.pop("agent.private_runtime.aws_clients", None)
             self.aws_clients = importlib.import_module("agent.private_runtime.aws_clients")
         self.addCleanup(sys.modules.pop, "agent.private_runtime.aws_clients", None)
@@ -62,9 +68,12 @@ class AwsClientFactoryTests(unittest.TestCase):
             "region_name": "ap-northeast-2",
         })
         self.assertEqual(client["service"], "bedrock-runtime")
-        self.assertEqual(client["kwargs"], {
-            "region_name": "ap-northeast-2",
-            "endpoint_url": "https://vpce-bedrock.example",
+        self.assertEqual(client["kwargs"]["region_name"], "ap-northeast-2")
+        self.assertEqual(client["kwargs"]["endpoint_url"], "https://vpce-bedrock.example")
+        self.assertEqual(client["kwargs"]["config"].kwargs, {
+            "connect_timeout": 5,
+            "read_timeout": 90,
+            "retries": {"max_attempts": 2, "mode": "standard"},
         })
 
     def test_service_client_uses_aws_profile_and_endpoint_url(self):
@@ -84,10 +93,9 @@ class AwsClientFactoryTests(unittest.TestCase):
             "region_name": "us-east-1",
         })
         self.assertEqual(client["service"], "sts")
-        self.assertEqual(client["kwargs"], {
-            "region_name": "us-east-1",
-            "endpoint_url": "https://vpce-sts.example",
-        })
+        self.assertEqual(client["kwargs"]["region_name"], "us-east-1")
+        self.assertEqual(client["kwargs"]["endpoint_url"], "https://vpce-sts.example")
+        self.assertEqual(client["kwargs"]["config"].kwargs["connect_timeout"], 5)
 
     def test_private_dns_omits_endpoint_url(self):
         env = EnvironmentConfig(
@@ -101,7 +109,9 @@ class AwsClientFactoryTests(unittest.TestCase):
 
         client = factory.service_client("sts")
 
-        self.assertEqual(client["kwargs"], {"region_name": "ap-northeast-2"})
+        self.assertEqual(client["kwargs"]["region_name"], "ap-northeast-2")
+        self.assertNotIn("endpoint_url", client["kwargs"])
+        self.assertEqual(client["kwargs"]["config"].kwargs["read_timeout"], 90)
 
     def test_explicit_missing_endpoint_fails_before_creating_client(self):
         env = EnvironmentConfig(
