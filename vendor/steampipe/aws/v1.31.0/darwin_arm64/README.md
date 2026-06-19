@@ -1,13 +1,14 @@
 # Vendored Steampipe AWS Plugin
 
-This directory contains an offline copy of the Steampipe AWS PostgreSQL FDW package for company workstation testing.
+This directory contains an offline copy of the Steampipe AWS CLI plugin for company workstation testing.
 
 - Upstream: `turbot/steampipe-plugin-aws`
 - Version: `v1.31.0`
 - Platform: `darwin_arm64`
-- PostgreSQL target: `pg15`
-- Source URL: `https://github.com/turbot/steampipe-plugin-aws/releases/download/v1.31.0/steampipe_postgres_aws.pg15.darwin_arm64.tar.gz`
-- SHA256: `03fc349ee5de50143c737ed9aa24b84b162f6442087a9aee90c3d13a582c855f`
+- Source image: `ghcr.io/turbot/steampipe/plugins/turbot/aws:1.31.0`
+- Plugin name: `hub.steampipe.io/plugins/turbot/aws@1.31.0`
+- Binary digest from Steampipe metadata: `sha256:7e639d5921062e00428ac570891ce3d7bae0b7a27efda6366ca1bf1eff9edef7`
+- Tarball SHA256: `4e742a04cb2a2f7453a776b7dd49e1f4775f9c5b13983fc16836a90d32b0a9cd`
 
 Use:
 

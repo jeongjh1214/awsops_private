@@ -130,7 +130,7 @@ Company workstation diagnostics:
 bash scripts/14-check-local-private.sh
 ```
 
-If the company network blocks Steampipe plugin registry access on a matching macOS arm64 workstation, install the vendored AWS plugin package:
+If the company network blocks Steampipe plugin registry access on a matching macOS arm64 workstation, install the vendored AWS CLI plugin package:
 
 ```bash
 bash scripts/15-install-vendored-steampipe-aws-plugin.sh

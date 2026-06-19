@@ -30,21 +30,13 @@ steampipe --version
 
 If `steampipe --version` is missing, the dashboard can render but resource pages will not work. Most pages query AWS through Steampipe on `127.0.0.1:9193`.
 
-If Steampipe exists but `steampipe plugin install aws` cannot reach the plugin registry, this branch includes a temporary vendored package for macOS arm64 company workstations:
+If Steampipe exists but `steampipe plugin install aws` cannot reach the plugin registry, this branch includes a temporary vendored CLI plugin package for macOS arm64 company workstations:
 
 ```bash
 bash scripts/15-install-vendored-steampipe-aws-plugin.sh
 ```
 
-The vendored package is `vendor/steampipe/aws/v1.31.0/darwin_arm64/steampipe_postgres_aws.pg15.darwin_arm64.tar.gz`. It is only for matching Darwin arm64 machines with PostgreSQL 15.
-
-The vendored installer needs `pg_config` because Steampipe plugins are PostgreSQL FDW extensions. If it is not on `PATH`, the script searches common Steampipe and Homebrew locations. You can also check manually:
-
-```bash
-find ~/.steampipe -name pg_config -type f
-brew install postgresql@15
-export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
-```
+The vendored package is `vendor/steampipe/aws/v1.31.0/darwin_arm64/steampipe-cli-plugin-aws-1.31.0-darwin-arm64.tgz`. It installs into `~/.steampipe/plugins/hub.steampipe.io/plugins/turbot/aws@1.31.0` and should appear in `steampipe plugin list`.
 
 ## Configure AWSops
 
