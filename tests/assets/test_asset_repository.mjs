@@ -46,6 +46,14 @@ try {
     resourceType: 'ec2_instance',
     resourceId: 'i-123',
   });
+  const incompleteAssetId = makeAssetId({
+    provider: 'aws',
+    accountId: '123456789012',
+    region: 'ap-northeast-2',
+    service: 'ec2',
+    resourceType: 'ec2_instance',
+    resourceId: 'i-456',
+  });
 
   db.prepare(`
     insert into asset_records (
@@ -60,6 +68,19 @@ try {
       @now, @now, @now, 1, @hash, @now, @now
     )
   `).run({ id: assetId, now, hash: stableJsonHash({ state: 'running' }) });
+  db.prepare(`
+    insert into asset_records (
+      id, provider, account_id, account_name, region, service, resource_type,
+      resource_id, resource_name, arn, status, native_state, tags_json,
+      source_table, source_updated_at, first_discovered_at, last_seen_at,
+      is_active, last_hash, created_at, updated_at
+    ) values (
+      @id, 'aws', '123456789012', 'Prod', 'ap-northeast-2', 'ec2', 'ec2_instance',
+      'i-456', 'worker-01', 'arn:aws:ec2:ap-northeast-2:123456789012:instance/i-456',
+      'running', 'running', '{"Name":"worker-01"}', 'aws_ec2_instance',
+      @now, @now, @now, 1, @hash, @now, @now
+    )
+  `).run({ id: incompleteAssetId, now, hash: stableJsonHash({ state: 'running', role: 'worker' }) });
 
   assert.deepEqual(
     updateAssetMetadata(db, assetId, {
@@ -69,6 +90,15 @@ try {
       remarks: 'primary workload',
       updatedBy: 'tester@example.com',
       containsPersonalInfo: true,
+    }, updatedAt),
+    true,
+  );
+  assert.deepEqual(
+    updateAssetMetadata(db, incompleteAssetId, {
+      ownerTeam: 'platform',
+      moduleName: 'worker',
+      phase: 'unknown',
+      updatedBy: 'tester@example.com',
     }, updatedAt),
     true,
   );
@@ -119,7 +149,14 @@ try {
   assert.equal(listResult.rows[0].remarks, 'primary workload');
   assert.equal(listResult.rows[0].contains_personal_info, null);
 
-  assert.equal(listAssets(db, { service: 'ec2', metadataMissing: true }).total, 0);
+  listResult = listAssets(db, { service: 'ec2', metadataMissing: true });
+  assert.equal(listResult.total, 1);
+  assert.equal(listResult.rows.length, 1);
+  assert.equal(listResult.rows[0].id, incompleteAssetId);
+  listResult = listAssets(db, { service: 'ec2', metadataMissing: false });
+  assert.equal(listResult.total, 1);
+  assert.equal(listResult.rows.length, 1);
+  assert.equal(listResult.rows[0].id, assetId);
   assert.equal(listAssets(db, { q: 'billing-api' }).total, 1);
   assert.equal(listAssets(db, { active: false }).total, 0);
 

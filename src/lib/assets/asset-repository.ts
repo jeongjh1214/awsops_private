@@ -153,6 +153,12 @@ const METADATA_SELECT = `
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
+const INCOMPLETE_METADATA_CONDITION = `(
+  m.asset_id is null
+  or coalesce(m.owner_team, '') = ''
+  or coalesce(m.module_name, '') = ''
+  or coalesce(m.phase, '') in ('', 'unknown')
+)`;
 
 export function listAssets(db: AssetDb, filters: AssetListFilters = {}): AssetListResult {
   const limit = normalizeLimit(filters.limit);
@@ -341,7 +347,7 @@ function makeListWhereClause(filters: AssetListFilters): {
   }
 
   if (filters.metadataMissing !== undefined) {
-    conditions.push(filters.metadataMissing ? 'm.asset_id is null' : 'm.asset_id is not null');
+    conditions.push(filters.metadataMissing ? INCOMPLETE_METADATA_CONDITION : `not ${INCOMPLETE_METADATA_CONDITION}`);
   }
 
   const q = filters.q?.trim();
