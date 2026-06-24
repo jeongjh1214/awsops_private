@@ -9,6 +9,13 @@ const DEFAULT_DB_PATH = resolve(process.cwd(), 'data/awsops.db');
 const requireFromProject = createRequire(resolve(process.cwd(), 'package.json'));
 const Database = requireFromProject('better-sqlite3') as typeof DatabaseType;
 
+type ForeignKeyInfo = {
+  table: string;
+  from: string;
+  to: string;
+  on_delete: string;
+};
+
 export function openAssetDb(dbPath: string = process.env.AWSOPS_ASSET_DB_PATH || DEFAULT_DB_PATH): AssetDb {
   const dir = dirname(dbPath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -89,7 +96,7 @@ export function migrateAssetDb(db: AssetDb): void {
 
     create table if not exists asset_change_events (
       id text primary key,
-      asset_id text not null,
+      asset_id text not null references asset_records(id) on delete cascade,
       event_type text not null,
       event_source text not null,
       summary text not null,
@@ -107,9 +114,58 @@ export function migrateAssetDb(db: AssetDb): void {
       summary_json text not null default '{}',
       error text not null default ''
     );
+  `);
 
+  ensureAssetChangeEventsForeignKey(db);
+
+  db.exec(`
     create index if not exists idx_asset_records_lookup on asset_records(account_id, region, service, resource_type);
     create index if not exists idx_asset_records_active on asset_records(is_active, last_seen_at);
     create index if not exists idx_asset_events_asset on asset_change_events(asset_id, created_at);
   `);
+}
+
+function ensureAssetChangeEventsForeignKey(db: AssetDb): void {
+  const foreignKeys = db.prepare('pragma foreign_key_list(asset_change_events)').all() as ForeignKeyInfo[];
+  const hasAssetRecordForeignKey = foreignKeys.some((foreignKey) => (
+    foreignKey.table === 'asset_records'
+    && foreignKey.from === 'asset_id'
+    && foreignKey.to === 'id'
+    && foreignKey.on_delete.toLowerCase() === 'cascade'
+  ));
+
+  if (hasAssetRecordForeignKey) return;
+
+  const legacyTable = `asset_change_events_without_asset_fk_${Date.now()}`;
+  db.transaction(() => {
+    db.exec(`
+      alter table asset_change_events rename to ${legacyTable};
+
+      create table asset_change_events (
+        id text primary key,
+        asset_id text not null references asset_records(id) on delete cascade,
+        event_type text not null,
+        event_source text not null,
+        summary text not null,
+        before_json text not null default '{}',
+        after_json text not null default '{}',
+        created_by text not null default '',
+        created_at text not null
+      );
+
+      insert into asset_change_events (
+        id, asset_id, event_type, event_source, summary, before_json,
+        after_json, created_by, created_at
+      )
+      select
+        id, asset_id, event_type, event_source, summary, before_json,
+        after_json, created_by, created_at
+      from ${legacyTable}
+      where exists (
+        select 1 from asset_records where asset_records.id = ${legacyTable}.asset_id
+      );
+
+      drop table ${legacyTable};
+    `);
+  })();
 }

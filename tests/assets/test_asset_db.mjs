@@ -28,6 +28,26 @@ try {
 
   const db = openAssetDb(dbPath);
   assert.equal(db.prepare("select name from sqlite_master where type='table' and name='asset_records'").get().name, 'asset_records');
+  const eventForeignKeys = db.prepare('pragma foreign_key_list(asset_change_events)').all();
+  assert.ok(
+    eventForeignKeys.some((foreignKey) => (
+      foreignKey.table === 'asset_records'
+      && foreignKey.from === 'asset_id'
+      && foreignKey.to === 'id'
+      && foreignKey.on_delete.toLowerCase() === 'cascade'
+    )),
+    'asset_change_events.asset_id should reference asset_records(id) on delete cascade',
+  );
+  assert.throws(
+    () => db.prepare(`
+      insert into asset_change_events (
+        id, asset_id, event_type, event_source, summary, created_at
+      ) values (
+        'evt-orphan', 'missing-asset', 'created', 'test', 'orphan event', '2026-06-24T00:00:00.000Z'
+      )
+    `).run(),
+    (error) => error?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY',
+  );
 
   const assetId = makeAssetId({
     provider: 'aws',

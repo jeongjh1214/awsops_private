@@ -2,6 +2,9 @@
   "name": "awsops-temp",
   "version": "1.8.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
