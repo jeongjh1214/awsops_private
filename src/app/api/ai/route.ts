@@ -24,6 +24,12 @@ import type { DatasourceType } from '@/lib/app-config';
 import { queryDatasource } from '@/lib/datasource-client';
 import { detectDatasourceTypes, DATASOURCE_TYPES } from '@/lib/datasource-registry';
 import { DATASOURCE_QUERY_PROMPTS } from '@/lib/datasource-prompts';
+import { openAssetDb } from '@/lib/assets/asset-db';
+import {
+  buildAssetInventoryContext,
+  detectAssetInventoryQuestion,
+  formatAssetInventoryContext,
+} from '@/lib/assets/asset-ai';
 import {
   getPrivateBedrockRuntimeContext,
   resolvePrivateBedrockModelId,
@@ -110,7 +116,7 @@ interface RouteConfig {
   description: string;         // What this route handles / 이 라우트가 처리하는 것
   tools: string[];             // Available tool capabilities / 사용 가능한 도구 기능
   examples?: string[];         // Classification examples / 분류 예시
-  handler?: 'code' | 'sql' | 'datasource' | 'auto-collect';   // Special handler type / 특수 핸들러 타입 (code: Code Interpreter, sql: pg Pool 직접, datasource: 외부 데이터소스, auto-collect: 자동 데이터 수집 분석)
+  handler?: 'code' | 'sql' | 'datasource' | 'auto-collect' | 'asset-inventory';   // Special handler type / 특수 핸들러 타입 (code: Code Interpreter, sql: pg Pool 직접, datasource: 외부 데이터소스, auto-collect: 자동 데이터 수집 분석)
 }
 
 const ROUTE_REGISTRY: Record<string, RouteConfig> = {
@@ -215,6 +221,23 @@ const ROUTE_REGISTRY: Record<string, RouteConfig> = {
       'Budgets (예산 상태 확인)',
     ],
     examples: ['"이번 달 비용" → cost', '"EC2 비용 분석" → cost', '"비용 예측" → cost', '"서비스별 비용 추이" → cost', '"AWS 전체 비용" → cost'],
+  },
+  'asset-inventory': {
+    gateway: '',
+    display: 'Cloud Asset Inventory',
+    description: 'Saved cloud asset ledger and metadata questions: owner team, module, phase, purpose, personal information, missing asset metadata',
+    tools: [
+      '저장된 Cloud Asset Inventory SQLite 원장 read-only 조회',
+      '담당조직/담당 팀, module, phase, purpose, 개인정보 포함 여부 분석',
+      'metadata 누락/미입력 자산 필터링',
+    ],
+    examples: [
+      '"자산관리 관리대장에서 담당조직 누락된 S3 버킷" → asset-inventory',
+      '"클라우드 자산 owner team metadata missing" → asset-inventory',
+      '"개인정보 포함 자산의 module과 phase 현황" → asset-inventory',
+      '"asset inventory owner team 목록" → asset-inventory',
+    ],
+    handler: 'asset-inventory',
   },
   'aws-data': {
     gateway: 'ops',
@@ -412,6 +435,7 @@ Classification rules:
 - "idle-scan" is for finding unused/idle AWS resources (EBS, EIP, stopped EC2, old snapshots). Use instead of "cost" for waste/idle resource questions.
 - "trace-analyze" is for distributed tracing analysis (Tempo/Jaeger). Service dependencies, latency bottlenecks, error propagation. Use instead of "datasource" for tracing questions.
 - "incident" is for multi-source incident/outage analysis. Cross-correlates Prometheus + Loki + Tempo + CloudWatch. Use instead of "monitoring" for incident/outage analysis.
+- "asset-inventory" is for saved asset ledger questions about 자산관리, 관리대장, 담당조직/담당 팀, owner team, module, metadata, 개인정보, phase, purpose, and missing metadata. It is NOT live AWS discovery.
 - "cost" is for GENERAL AWS billing, forecast, budgets only. NOT for service-specific optimization (use eks-optimize, db-optimize, msk-optimize, idle-scan instead).
 
 Examples:
@@ -446,6 +470,12 @@ function getSystemPrompt(lang?: string): string {
 // ============================================================================
 async function classifyIntent(messages: Array<{role: string; content: string}>): Promise<{ routes: RouteType[]; inputTokens: number; outputTokens: number }> {
   try {
+    const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')?.content || '';
+    if (detectAssetInventoryQuestion(latestUserMessage)) {
+      console.log('[Intent] Detected asset inventory question');
+      return { routes: ['asset-inventory'], inputTokens: 0, outputTokens: 0 };
+    }
+
     const recentMessages = messages.slice(-10);
     const body = JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
@@ -960,6 +990,51 @@ function recordAndSave(p: {
   saveConversation({ id: `${Date.now()}`, userId: p.userId, timestamp: new Date().toISOString(), route: p.route, gateway: p.gateway, question: p.question.slice(0, 100), summary: p.summary.slice(0, 200), usedTools: p.usedTools, responseTimeMs: p.responseTimeMs, via: p.via }).catch(() => {});
 }
 
+const ASSET_INVENTORY_SYSTEM_PROMPT = `주어진 자산관리 DB 컨텍스트만 근거로 답변하세요.
+실시간 AWS 조회가 아니라 저장된 자산 원장 기반이라고 명시하세요.
+컨텍스트에 없거나 확실하지 않으면 모른다고 답변하세요.
+write action 제안은 가능하지만 수행하지 마세요.
+담당조직, module, phase, purpose, 개인정보 포함 여부, metadata 누락 상태를 우선적으로 근거로 삼으세요.`;
+
+async function analyzeAssetInventory(
+  messages: Array<{role: string; content: string}>,
+  modelKey?: string,
+): Promise<{ content: string; via: string; queriedResources: string[]; usedTools: string[] }> {
+  const db = openAssetDb();
+  try {
+    const lastMessage = messages[messages.length - 1]?.content || '';
+    const context = buildAssetInventoryContext(db, lastMessage, { limit: 150 });
+    const formattedContext = formatAssetInventoryContext(context);
+    const bedrockMessages = messages.slice(-10).map((message: any) => ({
+      role: message.role,
+      content: message.content,
+    }));
+    bedrockMessages[bedrockMessages.length - 1].content += `\n\n${formattedContext}`;
+
+    const body = JSON.stringify({
+      anthropic_version: 'bedrock-2023-05-31',
+      max_tokens: 4096,
+      system: ASSET_INVENTORY_SYSTEM_PROMPT,
+      messages: bedrockMessages,
+    });
+    const response = await getBedrockClient().send(new InvokeModelCommand({
+      modelId: getAiModelId(modelKey),
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: new TextEncoder().encode(body),
+    }));
+    const result = JSON.parse(new TextDecoder().decode(response.body));
+    return {
+      content: result.content?.[0]?.text || '',
+      via: `Cloud Asset Inventory (${context.rows.length} rows)`,
+      queriedResources: ['asset-inventory'],
+      usedTools: ['asset-db:listAssets(read-only)'],
+    };
+  } finally {
+    db.close();
+  }
+}
+
 // POST handler — SSE streaming with step-by-step progress events
 // POST 핸들러 — 단계별 진행 이벤트를 포함한 SSE 스트리밍
 // ============================================================================
@@ -1165,6 +1240,38 @@ export async function POST(request: NextRequest) {
               return;
             }
             send('status', { step: 'datasource-fallback', message: '데이터소스 쿼리 실패. Bedrock으로 폴백합니다.' });
+          }
+        }
+
+        // Handler: Cloud Asset Inventory (saved asset ledger, read-only)
+        if (!isMulti && config.handler === 'asset-inventory') {
+          send('status', { step: 'asset-inventory-querying', message: isEn ? '📋 Reading saved asset inventory...' : '📋 저장된 자산 원장 조회 중...' });
+          const result = await handleSingleRoute(route, messages, modelKey, clientLang, accountId, account?.alias);
+          if (result) {
+            await simulateStreaming(result.content, send);
+            const responseTimeMs = Date.now() - callStartTime;
+            recordAndSave({
+              route,
+              gateway: 'asset-inventory',
+              responseTimeMs,
+              usedTools: result.usedTools || [],
+              success: true,
+              via: result.via,
+              question: lastMessage,
+              summary: result.content,
+              userId: currentUser.email,
+              inputTokens: totalInputTokens,
+              outputTokens: totalOutputTokens,
+              model: modelKey || 'sonnet-4.6',
+            });
+            send('done', {
+              content: result.content, model: modelKey || 'sonnet-4.6',
+              via: result.via, queriedResources: result.queriedResources, route,
+              usedTools: result.usedTools || [],
+              inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
+            });
+            controller.close();
+            return;
           }
         }
 
@@ -1449,6 +1556,11 @@ async function handleSingleRoute(
       return { content: aiText + executionBlock, via: `Bedrock + ${config.display}`, queriedResources: ['code-interpreter'] };
     }
     return { content: aiText, via: 'Bedrock (code)', queriedResources: [] };
+  }
+
+  // Cloud Asset Inventory handler / 저장된 자산 원장 핸들러
+  if (config.handler === 'asset-inventory') {
+    return analyzeAssetInventory(messages, modelKey);
   }
 
   // SQL handler / SQL 핸들러
