@@ -26,6 +26,7 @@ import {
   Globe,
   Shield,
   Package,
+  Boxes,
   BarChart3,
   HardDrive,
   Radio,
@@ -108,6 +109,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'sidebar.cloudtrail', href: '/cloudtrail', icon: FileSearch },
       { labelKey: 'sidebar.cost', href: '/cost', icon: DollarSign },
       { labelKey: 'sidebar.resourceInventory', href: '/inventory', icon: BarChart3 },
+      { labelKey: 'sidebar.cloudAssets', href: '/assets', icon: Boxes },
       { labelKey: 'sidebar.datasources', href: '/datasources', icon: DatabaseZap, subItems: [
         { labelKey: 'sidebar.datasources', href: '/datasources', icon: DatabaseZap },
         { labelKey: 'sidebar.datasourceExplore', href: '/datasources/explore', icon: SearchCode },
@@ -313,7 +315,7 @@ export default function Sidebar() {
                     return agentProvider !== null && agentProvider !== 'local-mcp-langgraph';
                   }
                   if (item.href === '/cloudfront-cdn') {
-                    return agentProvider !== null && agentProvider !== 'local-mcp-langgraph';
+                    return false;
                   }
                   // K8s items: show if single-account OR account has EKS
                   if (item.href.startsWith('/k8s')) {
