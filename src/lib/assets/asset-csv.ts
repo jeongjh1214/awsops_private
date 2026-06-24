@@ -83,11 +83,15 @@ const HEADER_ALIASES = new Map<string, CsvHeader>([
 
 export function exportAssetsCsv(db: AssetDb, filters: AssetListFilters = {}): string {
   const rows: AssetListRow[] = [];
+  const exportFilters: AssetListFilters = { ...filters };
+  delete exportFilters.limit;
+  delete exportFilters.offset;
+
   const pageSize = 500;
-  let offset = filters.offset ?? 0;
+  let offset = 0;
 
   for (;;) {
-    const page = listAssets(db, { ...filters, limit: pageSize, offset });
+    const page = listAssets(db, { ...exportFilters, limit: pageSize, offset });
     rows.push(...page.rows);
     if (page.rows.length < page.limit) break;
     offset += page.limit;

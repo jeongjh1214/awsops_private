@@ -108,6 +108,14 @@ try {
   assert.ok(exported.includes('"API, worker"'));
   assert.ok(exported.includes('"line ""one"", with comma\nline two"'));
 
+  const exportedIgnoringListPagination = exportAssetsCsv(db, { limit: 1, offset: 1 });
+  assert.ok(exportedIgnoringListPagination.includes(ec2AssetId));
+  assert.ok(exportedIgnoringListPagination.includes(bucketAssetId));
+
+  const exportedS3Only = exportAssetsCsv(db, { service: 's3', limit: 1, offset: 1 });
+  assert.ok(exportedS3Only.includes(bucketAssetId));
+  assert.ok(!exportedS3Only.includes(ec2AssetId));
+
   const quotedCsv = [
     'asset_id,owner_team,purpose,remarks,contains_personal_info',
     `${ec2AssetId},"team, csv","quote ""inside""","first line`,
@@ -121,6 +129,11 @@ try {
   assert.equal(quotedPreview.rows[0].values.purpose, 'quote "inside"');
   assert.equal(quotedPreview.rows[0].values.remarks, 'first line\nsecond line');
   assert.equal(quotedPreview.rows[0].values.containsPersonalInfo, null);
+
+  const unclosedQuotePreview = previewAssetCsvImport(db, 'asset_id,remarks\n"unterminated');
+  assert.equal(unclosedQuotePreview.valid, 0);
+  assert.equal(unclosedQuotePreview.invalid, 0);
+  assert.match(unclosedQuotePreview.errors[0].message, /unclosed quoted csv field/i);
 
   const koreanAliasCsv = [
     'accountid,service,resource_type,bucketname,담당조직,용도,개인정보 데이터 유무 여부,비고',
