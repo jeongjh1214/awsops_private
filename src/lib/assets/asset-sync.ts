@@ -8,6 +8,14 @@ export interface AssetSyncSummary {
   rediscovered: number;
 }
 
+export interface AssetMissingScope {
+  accountIds?: string[];
+  regions?: string[];
+  services?: string[];
+  resourceTypes?: string[];
+  sourceTables?: string[];
+}
+
 interface AssetRecordRow {
   id: string;
   provider: string;
@@ -142,14 +150,15 @@ export function upsertDiscoveredAssets(db: AssetDb, assets: AssetRecord[], now: 
   return summary;
 }
 
-export function markMissingAssets(db: AssetDb, seenIds: Set<string>, now: string): number {
-  const activeAssets = db.prepare('select * from asset_records where is_active = 1');
+export function markMissingAssets(db: AssetDb, seenIds: Set<string>, now: string, scope?: AssetMissingScope): number {
+  const activeAssetsQuery = makeActiveAssetsQuery(scope);
+  const activeAssets = db.prepare(activeAssetsQuery.sql);
   const markInactive = db.prepare('update asset_records set is_active = 0, updated_at = ? where id = ?');
   const insertEvent = makeInsertEventStatement(db);
   let missing = 0;
 
   db.transaction(() => {
-    const rows = activeAssets.all() as AssetRecordRow[];
+    const rows = activeAssets.all(activeAssetsQuery.params) as AssetRecordRow[];
     for (const row of rows) {
       if (seenIds.has(row.id)) continue;
 
@@ -167,6 +176,39 @@ export function markMissingAssets(db: AssetDb, seenIds: Set<string>, now: string
   })();
 
   return missing;
+}
+
+function makeActiveAssetsQuery(scope?: AssetMissingScope): { sql: string; params: Record<string, string> } {
+  const conditions = ['is_active = 1'];
+  const params: Record<string, string> = {};
+
+  addInCondition(conditions, params, 'account_id', 'accountId', scope?.accountIds);
+  addInCondition(conditions, params, 'region', 'region', scope?.regions);
+  addInCondition(conditions, params, 'service', 'service', scope?.services);
+  addInCondition(conditions, params, 'resource_type', 'resourceType', scope?.resourceTypes);
+  addInCondition(conditions, params, 'source_table', 'sourceTable', scope?.sourceTables);
+
+  return {
+    sql: `select * from asset_records where ${conditions.join(' and ')}`,
+    params,
+  };
+}
+
+function addInCondition(
+  conditions: string[],
+  params: Record<string, string>,
+  column: string,
+  paramPrefix: string,
+  values?: string[],
+): void {
+  if (!values?.length) return;
+
+  const placeholders = values.map((value, index) => {
+    const name = `${paramPrefix}${index}`;
+    params[name] = value;
+    return `@${name}`;
+  });
+  conditions.push(`${column} in (${placeholders.join(', ')})`);
 }
 
 function makeInsertEventStatement(db: AssetDb) {

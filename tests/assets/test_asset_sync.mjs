@@ -26,7 +26,7 @@ try {
 
   const require = createRequire(import.meta.url);
   const { openAssetDb } = require(join(outDir, 'asset-db.js'));
-  const { normalizeEc2Instance } = require(join(outDir, 'asset-normalizers.js'));
+  const { normalizeEc2Instance, normalizeS3Bucket } = require(join(outDir, 'asset-normalizers.js'));
   const { markMissingAssets, upsertDiscoveredAssets } = require(join(outDir, 'asset-sync.js'));
 
   const db = openAssetDb(dbPath);
@@ -122,6 +122,46 @@ try {
 
   events = db.prepare('select event_type from asset_change_events where asset_id = ? order by created_at').all(discoveredAsset.id);
   assert.deepEqual(events.map((event) => event.event_type), ['discovered', 'changed', 'missing', 'restored']);
+
+  const s3Seen = '2026-06-24T00:20:00.000Z';
+  const scopedEc2MissingAt = '2026-06-24T00:25:00.000Z';
+  const scopedS3MissingAt = '2026-06-24T00:30:00.000Z';
+  const s3Asset = normalizeS3Bucket({
+    account_id: '123456789012',
+    account_name: 'Prod',
+    name: 'logs-prod',
+    tags: { Environment: 'prod' },
+  }, s3Seen);
+
+  assert.equal(s3Asset.id, 'aws:123456789012:global:s3:s3_bucket:logs-prod');
+  assert.equal(s3Asset.sourceTable, 'aws_s3_bucket');
+  assert.equal(s3Asset.region, 'global');
+  assert.equal(s3Asset.arn, 'arn:aws:s3:::logs-prod');
+  assert.equal(s3Asset.status, 'available');
+  assert.equal(s3Asset.nativeState, 'available');
+  assert.equal(s3Asset.resourceId, 'logs-prod');
+  assert.equal(s3Asset.resourceName, 'logs-prod');
+
+  assert.deepEqual(
+    upsertDiscoveredAssets(db, [s3Asset], s3Seen),
+    { discovered: 1, changed: 0, rediscovered: 0 },
+  );
+
+  assert.equal(markMissingAssets(db, new Set([discoveredAsset.id]), scopedEc2MissingAt, { services: ['ec2'] }), 0);
+  record = db.prepare('select is_active, updated_at from asset_records where id = ?').get(discoveredAsset.id);
+  assert.equal(record.is_active, 1);
+  assert.equal(record.updated_at, rediscoveredAt);
+  record = db.prepare('select is_active, updated_at from asset_records where id = ?').get(s3Asset.id);
+  assert.equal(record.is_active, 1);
+  assert.equal(record.updated_at, s3Seen);
+
+  assert.equal(markMissingAssets(db, new Set(), scopedS3MissingAt, { services: ['s3'] }), 1);
+  record = db.prepare('select is_active, updated_at from asset_records where id = ?').get(s3Asset.id);
+  assert.equal(record.is_active, 0);
+  assert.equal(record.updated_at, scopedS3MissingAt);
+  record = db.prepare('select is_active, updated_at from asset_records where id = ?').get(discoveredAsset.id);
+  assert.equal(record.is_active, 1);
+  assert.equal(record.updated_at, rediscoveredAt);
 
   db.close();
 } finally {
