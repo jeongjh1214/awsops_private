@@ -452,8 +452,11 @@ function applyMetadataInput(
   applyStringField(after, input, 'remarks');
   applyStringField(after, input, 'updatedBy');
 
-  if (Object.prototype.hasOwnProperty.call(input, 'containsPersonalInfo')) {
-    after.containsPersonalInfo = input.containsPersonalInfo ?? null;
+  if (
+    Object.prototype.hasOwnProperty.call(input, 'containsPersonalInfo')
+    && input.containsPersonalInfo !== undefined
+  ) {
+    after.containsPersonalInfo = input.containsPersonalInfo;
   }
 
   return after;

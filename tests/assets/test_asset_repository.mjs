@@ -36,6 +36,7 @@ try {
   const now = '2026-06-24T00:00:00.000Z';
   const updatedAt = '2026-06-24T01:00:00.000Z';
   const secondUpdatedAt = '2026-06-24T02:00:00.000Z';
+  const thirdUpdatedAt = '2026-06-24T03:00:00.000Z';
 
   const assetId = makeAssetId({
     provider: 'aws',
@@ -87,9 +88,25 @@ try {
   assert.deepEqual(
     updateAssetMetadata(db, assetId, {
       ownerTeam: 'platform-sre',
-      containsPersonalInfo: null,
+      containsPersonalInfo: undefined,
       updatedBy: 'tester2@example.com',
     }, secondUpdatedAt),
+    true,
+  );
+
+  listResult = listAssets(db, { service: 'ec2', metadataMissing: false });
+  assert.equal(listResult.rows[0].owner_team, 'platform-sre');
+  assert.equal(listResult.rows[0].module_name, 'billing-api');
+  assert.equal(listResult.rows[0].phase, 'prod');
+  assert.equal(listResult.rows[0].remarks, 'primary workload');
+  assert.equal(listResult.rows[0].contains_personal_info, 1);
+
+  assert.deepEqual(
+    updateAssetMetadata(db, assetId, {
+      ownerTeam: 'platform-sre',
+      containsPersonalInfo: null,
+      updatedBy: 'tester3@example.com',
+    }, thirdUpdatedAt),
     true,
   );
 
@@ -115,10 +132,11 @@ try {
   assert.deepEqual(detail.customFields, []);
   assert.deepEqual(
     detail.events.map((event) => event.event_type),
-    ['metadata_updated', 'metadata_updated'],
+    ['metadata_updated', 'metadata_updated', 'metadata_updated'],
   );
-  assert.equal(detail.events[0].created_at, secondUpdatedAt);
-  assert.equal(JSON.parse(detail.events[0].before_json).ownerTeam, 'platform');
+  assert.equal(detail.events[0].created_at, thirdUpdatedAt);
+  assert.equal(JSON.parse(detail.events[0].before_json).ownerTeam, 'platform-sre');
+  assert.equal(JSON.parse(detail.events[0].before_json).containsPersonalInfo, true);
   assert.equal(JSON.parse(detail.events[0].after_json).ownerTeam, 'platform-sre');
   assert.equal(JSON.parse(detail.events[0].after_json).containsPersonalInfo, null);
 
