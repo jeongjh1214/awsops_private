@@ -51,6 +51,7 @@ Edit `data/config.json`:
 - set `environments.local.awsProfile`
 - set `environments.local.bedrockProfile`
 - set `environments.local.endpointUrls`
+- set `environments.local.endpointUrls.s3` to the approved S3 VPCE hostname when `s3_bucket` sync is enabled
 - set `agent.modelId` to the approved Bedrock model ID or inference profile ARN
 - set `accounts[0].profile` to the local AWSops profile
 
@@ -65,12 +66,12 @@ mkdir -p ~/.steampipe/config
 cp docs/examples/steampipe-aws.spc.example ~/.steampipe/config/aws.spc
 ```
 
-Edit `~/.steampipe/config/aws.spc` and set the profile and region.
+Edit `~/.steampipe/config/aws.spc` and set the profile and region. Keep `s3_force_path_style = true` for explicit S3 VPCE access.
 
 Start Steampipe:
 
 ```bash
-steampipe service start --database-listen network --database-port 9193
+bash scripts/16-start-steampipe-private.sh
 steampipe service status --show-password
 ```
 
@@ -150,7 +151,7 @@ Run `npm ci` from the repository root.
 Steampipe is not running. Start it with:
 
 ```bash
-steampipe service start --database-listen network --database-port 9193
+bash scripts/16-start-steampipe-private.sh
 ```
 
 `aws_ec2_instance does not exist`
@@ -172,6 +173,18 @@ steampipe service restart --force
 Initial page loads but resource pages are empty
 
 Next.js is running, but Steampipe, AWS profile, or endpoint access is not working. Run `scripts/14-check-local-private.sh`.
+
+EC2 works but S3 buckets are empty
+
+S3 needs explicit service endpoint handling because bucket requests can use bucket-specific hostnames. Check:
+
+```bash
+AWS_PROFILE=awsops-local-profile aws s3api list-buckets \
+  --endpoint-url https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com
+
+bash scripts/16-start-steampipe-private.sh
+steampipe query "select name from aws_s3_bucket limit 5"
+```
 
 AI returns 502
 

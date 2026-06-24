@@ -9,11 +9,13 @@
       "awsProfile": "awsops-local-profile",
       "endpointUrls": {
         "bedrock-runtime": "https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com",
-        "sts": "https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com"
+        "sts": "https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com",
+        "s3": "https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com"
       },
       "requiredEndpoints": [
         "bedrock-runtime",
-        "sts"
+        "sts",
+        "s3"
       ]
     },
     "dev": {
@@ -23,11 +25,13 @@
       "awsProfile": "awsops-dev-profile",
       "endpointUrls": {
         "bedrock-runtime": "https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com",
-        "sts": "https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com"
+        "sts": "https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com",
+        "s3": "https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com"
       },
       "requiredEndpoints": [
         "bedrock-runtime",
-        "sts"
+        "sts",
+        "s3"
       ]
     },
     "prod": {

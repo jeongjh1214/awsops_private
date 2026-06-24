@@ -2,6 +2,7 @@ connection "aws" {
   plugin  = "aws"
   profile = "awsops-local-profile"
   regions = ["ap-northeast-2"]
+  s3_force_path_style = true
 
   ignore_error_codes = [
     "AccessDenied",
@@ -11,3 +12,24 @@ connection "aws" {
     "AuthorizationError"
   ]
 }
+
+# S3 VPCE note:
+# Keep the Steampipe connection profile/region here, but set the S3 endpoint
+# outside this file with one of the service-specific AWS SDK mechanisms below.
+# Do not set connection-level endpoint_url unless every AWS service should use
+# the same endpoint host.
+#
+# Preferred for this repo:
+#   data/config.json:
+#     environments.<active>.endpointUrls.s3 = "https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com"
+#   bash scripts/16-start-steampipe-private.sh
+#
+# Alternative AWS shared config:
+#   ~/.aws/config:
+#     [profile awsops-local-profile]
+#     region = ap-northeast-2
+#     services = awsops-local-services
+#
+#     [services awsops-local-services]
+#     s3 =
+#       endpoint_url = https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com

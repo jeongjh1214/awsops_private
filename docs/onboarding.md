@@ -34,9 +34,10 @@ If a resource is needed, request it through the approved platform/security proce
 2. Copy `docs/examples/config.vm-private.example.json` to `data/config.json`.
 3. Set `activeEnvironment` to `local`.
 4. Fill `endpointUrls` with approved VPCE hostnames.
+   Include `endpointUrls.s3` when `s3_bucket` sync is enabled.
 5. Review `assetInventory.supportedResourceTypes`; keep only resource types approved for collection.
 6. Create the local data directory with `mkdir -p data`.
-7. Start Steampipe.
+7. Start Steampipe with `bash scripts/16-start-steampipe-private.sh`.
 8. Run `npm run dev`.
 9. Run `bash scripts/13-start-private-agent.sh`.
 10. Open `http://127.0.0.1:3000/awsops`.

@@ -13,14 +13,8 @@ echo -e "${CYAN}================================================================
 echo ""
 
 echo -e "${CYAN}[1/3] Starting Steampipe service (port 9193)...${NC}"
-if steampipe service status 2>&1 | grep -q "running"; then
-    echo -e "  ${GREEN}Already running${NC}"
-else
-    steampipe service stop --force 2>/dev/null || true
-    sleep 2
-    steampipe service start --database-listen network --database-port 9193
-    echo -e "  ${GREEN}Started${NC}"
-fi
+bash scripts/16-start-steampipe-private.sh
+echo -e "  ${GREEN}Started${NC}"
 
 echo ""
 echo -e "${CYAN}[2/3] Starting Next.js production server (port 3000)...${NC}"

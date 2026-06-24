@@ -47,6 +47,21 @@ AWS_PROFILE=bedrock-local-profile aws bedrock-runtime invoke-model \
 
 If TLS hostname verification fails, use the VPCE DNS hostname in `endpointUrls`. Do not replace the hostname with an arbitrary private IP.
 
+For S3:
+
+```bash
+AWS_PROFILE=awsops-local-profile aws s3api list-buckets \
+  --endpoint-url https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com
+```
+
+When `s3_bucket` sync is enabled, set `environments.<active>.endpointUrls.s3` and start Steampipe with:
+
+```bash
+bash scripts/16-start-steampipe-private.sh
+```
+
+The script exports `AWS_ENDPOINT_URL_S3` for the Steampipe service process. Keep `s3_force_path_style = true` in `~/.steampipe/config/aws.spc`.
+
 For AI Assistant, confirm the private agent is using the expected Bedrock profile and Runtime endpoint:
 
 ```bash
@@ -128,6 +143,13 @@ Confirm Steampipe can read the selected resources:
 ```bash
 steampipe query "select instance_id from aws_ec2_instance limit 1"
 steampipe query "select name from aws_s3_bucket limit 1"
+```
+
+If EC2 works but S3 returns no buckets or endpoint errors, restart Steampipe through the private start script so the configured S3 VPCE endpoint is injected into the Steampipe service process:
+
+```bash
+bash scripts/16-start-steampipe-private.sh
+steampipe query "select name from aws_s3_bucket limit 5"
 ```
 
 Cloud Assets sync uses Steampipe and the existing Steampipe AWS connection. It does not create AWS resources or VPC endpoints.

@@ -9,7 +9,7 @@ bash scripts/09-start-all.sh
 
 ### 1. Steampipe
 ```bash
-steampipe service start --database-listen network --database-port 9193
+bash scripts/16-start-steampipe-private.sh
 steampipe service status --show-password
 ```
 
@@ -32,5 +32,5 @@ bash scripts/11-verify.sh             # 전체 점검 (full check)
 
 ## 문제 해결 / Troubleshooting
 - 포트 3000이 사용 중인 경우 (Port 3000 in use): `fuser -k 3000/tcp`
-- Steampipe가 시작되지 않는 경우 (Steampipe won't start): `steampipe service stop --force && sleep 2 && steampipe service start`
+- Steampipe가 시작되지 않는 경우 (Steampipe won't start): `bash scripts/16-start-steampipe-private.sh`
 - 비밀번호 불일치 (Password mismatch): `bash scripts/02-setup-nextjs.sh` (비밀번호 재동기화 / re-syncs password)

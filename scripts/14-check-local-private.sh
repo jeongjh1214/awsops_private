@@ -93,6 +93,26 @@ print(f"       agent.modelId: {agent.get('modelId')}")
 print(f"       steampipePassword: {'set' if cfg.get('steampipePassword') else 'not set'}")
 print(f"       accounts: {len(accounts)}")
 PY
+    s3_check="$(python3 - <<'PY'
+import json
+cfg = json.load(open("data/config.json", encoding="utf-8"))
+active = cfg.get("activeEnvironment")
+env = (cfg.get("environments") or {}).get(active, {})
+endpoints = env.get("endpointUrls") or {}
+asset = cfg.get("assetInventory") or {}
+resource_types = asset.get("supportedResourceTypes") or []
+if env.get("endpointMode") == "explicit" and "s3_bucket" in resource_types and not endpoints.get("s3"):
+    print(f"missing:{active}")
+else:
+    print("ok:")
+PY
+)"
+    if [[ "$s3_check" == missing:* ]]; then
+      active_env="${s3_check#missing:}"
+      fail "s3_bucket sync is enabled but environments.${active_env}.endpointUrls.s3 is missing"
+    else
+      ok "S3 endpoint config is compatible with the selected asset sync types"
+    fi
   else
     fail "data/config.json is invalid JSON"
   fi
@@ -112,6 +132,11 @@ fi
 
 if [ -f "$HOME/.steampipe/config/aws.spc" ]; then
   ok "~/.steampipe/config/aws.spc exists"
+  if grep -Eq '^[[:space:]]*s3_force_path_style[[:space:]]*=[[:space:]]*true' "$HOME/.steampipe/config/aws.spc"; then
+    ok "Steampipe AWS config has s3_force_path_style = true"
+  else
+    warn "Set s3_force_path_style = true in ~/.steampipe/config/aws.spc for explicit S3 VPCE access"
+  fi
 else
   warn "~/.steampipe/config/aws.spc is missing; copy docs/examples/steampipe-aws.spc.example and edit it"
 fi
@@ -148,6 +173,8 @@ echo -e "${CYAN}[6/6] Guidance${NC}"
 echo "  npm run dev selects the Next.js development server only."
 echo "  AWSops local/dev/prod selection comes from data/config.json activeEnvironment."
 echo "  Resource pages require Steampipe on 127.0.0.1:9193."
+echo "  S3 bucket sync requires Steampipe to start with AWS_ENDPOINT_URL_S3 or an AWS shared-config S3 endpoint."
+echo "  Recommended: bash scripts/16-start-steampipe-private.sh"
 echo "  AI requires the private agent on 127.0.0.1:7000 and Bedrock endpoint access."
 
 echo ""
