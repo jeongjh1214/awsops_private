@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { exportAssetsCsv, previewAssetCsvImport, applyAssetCsvImport } from '@/lib/assets/asset-csv';
 import { openAssetDb } from '@/lib/assets/asset-db';
 import { listAssets, type AssetListFilters } from '@/lib/assets/asset-repository';
 import { parseAssetSyncResourceTypesInput, runAssetSync } from '@/lib/assets/asset-sync';
@@ -30,6 +31,16 @@ export async function GET(request: NextRequest) {
       offset: optionalNumber(searchParams.get('offset')),
     };
 
+    if (optionalString(searchParams.get('action')) === 'export') {
+      const csv = exportAssetsCsv(db, filters);
+      return new NextResponse(csv, {
+        headers: {
+          'content-type': 'text/csv; charset=utf-8',
+          'content-disposition': 'attachment; filename="awsops-assets.csv"',
+        },
+      });
+    }
+
     return NextResponse.json(listAssets(db, filters));
   } finally {
     db.close();
@@ -41,25 +52,43 @@ export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = optionalString(searchParams.get('action')) ?? optionalString(body.action);
 
-  if (action !== 'sync') {
-    return NextResponse.json({ error: 'unsupported action' }, { status: 400 });
+  if (action === 'sync') {
+    const resourceTypesInput = parseAssetSyncResourceTypesInput(body.resourceTypes);
+    if (resourceTypesInput.error) {
+      return NextResponse.json({ error: resourceTypesInput.error }, { status: 400 });
+    }
+
+    const summary = await runAssetSync({
+      resourceTypes: resourceTypesInput.resourceTypes,
+      dependencies: {
+        runQuery,
+        getAssetInventoryConfig: () => getConfig().assetInventory,
+        openAssetDb,
+      },
+    });
+
+    return NextResponse.json({ ok: true, summary });
   }
 
-  const resourceTypesInput = parseAssetSyncResourceTypesInput(body.resourceTypes);
-  if (resourceTypesInput.error) {
-    return NextResponse.json({ error: resourceTypesInput.error }, { status: 400 });
+  if (action === 'import-preview' || action === 'import-apply') {
+    if (typeof body.csvText !== 'string') {
+      return NextResponse.json({ error: 'csvText is required' }, { status: 400 });
+    }
+
+    const db = openAssetDb();
+    try {
+      if (action === 'import-preview') {
+        return NextResponse.json(previewAssetCsvImport(db, body.csvText));
+      }
+
+      const updatedBy = optionalString(body.updatedBy) ?? 'csv-import';
+      return NextResponse.json(applyAssetCsvImport(db, body.csvText, updatedBy));
+    } finally {
+      db.close();
+    }
   }
 
-  const summary = await runAssetSync({
-    resourceTypes: resourceTypesInput.resourceTypes,
-    dependencies: {
-      runQuery,
-      getAssetInventoryConfig: () => getConfig().assetInventory,
-      openAssetDb,
-    },
-  });
-
-  return NextResponse.json({ ok: true, summary });
+  return NextResponse.json({ error: 'unsupported action' }, { status: 400 });
 }
 
 async function readJsonBody(request: NextRequest): Promise<Record<string, unknown>> {
