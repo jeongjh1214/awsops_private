@@ -1,12 +1,12 @@
 import type DatabaseType from 'better-sqlite3';
 import { dirname, resolve } from 'path';
 import { existsSync, mkdirSync } from 'fs';
-import { createRequire } from 'module';
 
 export type AssetDb = DatabaseType.Database;
 
 const DEFAULT_DB_PATH = resolve(process.cwd(), 'data/awsops.db');
-const requireFromProject = createRequire(resolve(process.cwd(), 'package.json'));
+const nodeRequire = eval('require') as NodeRequire;
+const requireFromProject = nodeRequire('module').createRequire(resolve(process.cwd(), 'package.json')) as NodeRequire;
 const Database = requireFromProject('better-sqlite3') as typeof DatabaseType;
 
 type ForeignKeyInfo = {
