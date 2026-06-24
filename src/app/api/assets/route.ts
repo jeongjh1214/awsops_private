@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { openAssetDb } from '@/lib/assets/asset-db';
 import { listAssets, type AssetListFilters } from '@/lib/assets/asset-repository';
+import { runAssetSync } from '@/lib/assets/asset-sync';
+import { getConfig } from '@/lib/app-config';
+import { runQuery } from '@/lib/steampipe';
 
 export const runtime = 'nodejs';
 
@@ -33,8 +36,43 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function optionalString(value: string | null): string | undefined {
-  if (value === null || value.trim() === '') return undefined;
+export async function POST(request: NextRequest) {
+  const body = await readJsonBody(request);
+  const { searchParams } = new URL(request.url);
+  const action = optionalString(searchParams.get('action')) ?? optionalString(body.action);
+
+  if (action !== 'sync') {
+    return NextResponse.json({ error: 'unsupported action' }, { status: 400 });
+  }
+
+  const resourceTypes = Array.isArray(body.resourceTypes)
+    && body.resourceTypes.every((resourceType) => typeof resourceType === 'string')
+    ? body.resourceTypes
+    : undefined;
+  const summary = await runAssetSync({
+    resourceTypes,
+    dependencies: {
+      runQuery,
+      getAssetInventoryConfig: () => getConfig().assetInventory,
+      openAssetDb,
+    },
+  });
+
+  return NextResponse.json({ ok: true, summary });
+}
+
+async function readJsonBody(request: NextRequest): Promise<Record<string, unknown>> {
+  try {
+    const body = await request.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
+    return body as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function optionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
   return value;
 }
 

@@ -1,5 +1,7 @@
 import { randomUUID } from 'crypto';
+import { resolve } from 'path';
 import type { AssetDb } from './asset-db';
+import { normalizeEc2Instance, normalizeS3Bucket } from './asset-normalizers';
 import type { AssetRecord } from './asset-types';
 
 export interface AssetSyncSummary {
@@ -14,6 +16,241 @@ export interface AssetMissingScope {
   services?: string[];
   resourceTypes?: string[];
   sourceTables?: string[];
+}
+
+type SteampipeRow = Record<string, unknown>;
+
+export interface AssetSyncQuery {
+  sql: string;
+  normalize: (row: SteampipeRow, now: string) => AssetRecord;
+  missingScope: AssetMissingScope;
+}
+
+export interface AssetSyncSelection {
+  selected: string[];
+  unsupported: string[];
+}
+
+export interface AssetSyncFailure {
+  resourceType: string;
+  error: string;
+}
+
+export interface AssetSyncRunSummary {
+  selected: string[];
+  unsupported: string[];
+  discovered: number;
+  changed: number;
+  rediscovered: number;
+  missing: number;
+  failed: AssetSyncFailure[];
+  startedAt: string;
+  finishedAt: string;
+  skipped?: boolean;
+  reason?: string;
+}
+
+export interface RunAssetSyncOptions {
+  resourceTypes?: string[];
+  now?: string;
+  sqlitePath?: string;
+  dependencies?: {
+    runQuery?: RunQuery;
+    getAssetInventoryConfig?: () => Partial<AssetInventoryRuntimeConfig> | undefined;
+    openAssetDb?: (dbPath?: string) => AssetDb;
+  };
+}
+
+export type RunQuery = <T = Record<string, unknown>>(
+  sql: string,
+  opts?: { bustCache?: boolean },
+) => Promise<{ rows: T[]; error?: string }>;
+
+export interface AssetInventoryRuntimeConfig {
+  enabled: boolean;
+  dbProvider: 'sqlite' | string;
+  sqlitePath: string;
+  syncOnDemandOnly: boolean;
+  adminTokenHash: string;
+  supportedResourceTypes: string[];
+}
+
+const DEFAULT_ASSET_SYNC_CONFIG: AssetInventoryRuntimeConfig = {
+  enabled: true,
+  dbProvider: 'sqlite',
+  sqlitePath: 'data/awsops.db',
+  syncOnDemandOnly: true,
+  adminTokenHash: '',
+  supportedResourceTypes: ['ec2_instance', 's3_bucket'],
+};
+
+export const ASSET_SYNC_QUERIES: Record<string, AssetSyncQuery> = {
+  ec2_instance: {
+    sql: `
+      SELECT
+        account_id,
+        '' AS account_name,
+        region,
+        tags ->> 'Name' AS name,
+        instance_id AS id,
+        instance_id,
+        arn,
+        instance_state AS status,
+        instance_state,
+        tags,
+        COALESCE(state_transition_time::text, launch_time::text) AS source_updated_at
+      FROM
+        aws_ec2_instance
+    `,
+    normalize: normalizeEc2Instance,
+    missingScope: {
+      services: ['ec2'],
+      resourceTypes: ['ec2_instance'],
+      sourceTables: ['aws_ec2_instance'],
+    },
+  },
+  s3_bucket: {
+    sql: `
+      SELECT
+        account_id,
+        '' AS account_name,
+        region,
+        name,
+        name AS id,
+        arn,
+        'available' AS status,
+        tags,
+        creation_date::text AS source_updated_at
+      FROM
+        aws_s3_bucket
+    `,
+    normalize: normalizeS3Bucket,
+    missingScope: {
+      services: ['s3'],
+      resourceTypes: ['s3_bucket'],
+      sourceTables: ['aws_s3_bucket'],
+    },
+  },
+};
+
+export function selectAssetSyncResourceTypes(requested?: string[], configured?: string[]): AssetSyncSelection {
+  const supported = Object.keys(ASSET_SYNC_QUERIES);
+  const supportedSet = new Set(supported);
+  const configuredProvided = Array.isArray(configured);
+  const configuredSet = configuredProvided
+    ? new Set(uniqueStrings(configured).filter((resourceType) => supportedSet.has(resourceType)))
+    : supportedSet;
+  const allowed = supported.filter((resourceType) => configuredSet.has(resourceType));
+  const allowedSet = new Set(allowed);
+  const requestedProvided = Array.isArray(requested);
+  const candidates = requestedProvided ? uniqueStrings(requested) : allowed;
+  const selected = candidates.filter((resourceType) => allowedSet.has(resourceType));
+  const unsupported = requestedProvided
+    ? candidates.filter((resourceType) => !allowedSet.has(resourceType))
+    : [];
+
+  return { selected, unsupported };
+}
+
+export async function runAssetSync(options: RunAssetSyncOptions = {}): Promise<AssetSyncRunSummary> {
+  const assetConfig = {
+    ...DEFAULT_ASSET_SYNC_CONFIG,
+    ...(options.dependencies?.getAssetInventoryConfig?.() ?? loadAssetInventoryConfig()),
+  };
+  const startedAt = options.now ?? new Date().toISOString();
+
+  if (!assetConfig.enabled) {
+    return {
+      selected: [],
+      unsupported: [],
+      discovered: 0,
+      changed: 0,
+      rediscovered: 0,
+      missing: 0,
+      failed: [],
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      skipped: true,
+      reason: 'asset inventory sync is disabled',
+    };
+  }
+
+  if (assetConfig.dbProvider !== 'sqlite') {
+    return {
+      selected: [],
+      unsupported: [],
+      discovered: 0,
+      changed: 0,
+      rediscovered: 0,
+      missing: 0,
+      failed: [],
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      skipped: true,
+      reason: `asset inventory dbProvider ${assetConfig.dbProvider} is not supported`,
+    };
+  }
+
+  const selection = selectAssetSyncResourceTypes(options.resourceTypes, assetConfig.supportedResourceTypes);
+  const summary: AssetSyncRunSummary = {
+    selected: selection.selected,
+    unsupported: selection.unsupported,
+    discovered: 0,
+    changed: 0,
+    rediscovered: 0,
+    missing: 0,
+    failed: [],
+    startedAt,
+    finishedAt: '',
+  };
+  const dbPath = options.sqlitePath ?? assetConfig.sqlitePath;
+  const runId = randomUUID();
+  let db: AssetDb | undefined;
+
+  try {
+    const openAssetDb = options.dependencies?.openAssetDb ?? loadOpenAssetDb();
+    const runQuery = options.dependencies?.runQuery ?? loadRunQuery();
+    db = openAssetDb(resolve(process.cwd(), dbPath));
+    insertSyncRun(db, runId, startedAt, summary);
+
+    for (const resourceType of summary.selected) {
+      const query = ASSET_SYNC_QUERIES[resourceType];
+      try {
+        const result = await runQuery<SteampipeRow>(query.sql, { bustCache: true });
+        if (result.error) {
+          summary.failed.push({ resourceType, error: result.error });
+          continue;
+        }
+
+        const assets = result.rows.map((row) => query.normalize(row, startedAt));
+        const seenIds = new Set(assets.map((asset) => asset.id));
+        const upsertSummary = upsertDiscoveredAssets(db, assets, startedAt);
+        summary.discovered += upsertSummary.discovered;
+        summary.changed += upsertSummary.changed;
+        summary.rediscovered += upsertSummary.rediscovered;
+        summary.missing += markMissingAssets(db, seenIds, startedAt, query.missingScope);
+      } catch (err) {
+        summary.failed.push({
+          resourceType,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    summary.finishedAt = new Date().toISOString();
+    safeUpdateSyncRun(db, runId, syncRunStatus(summary), summary);
+    return summary;
+  } catch (err) {
+    summary.finishedAt = new Date().toISOString();
+    summary.failed.push({
+      resourceType: 'asset_sync',
+      error: err instanceof Error ? err.message : String(err),
+    });
+    if (db) safeUpdateSyncRun(db, runId, syncRunStatus(summary), summary);
+    return summary;
+  } finally {
+    db?.close();
+  }
 }
 
 interface AssetRecordRow {
@@ -41,6 +278,94 @@ interface AssetRecordRow {
 }
 
 type AssetEventType = 'discovered' | 'changed' | 'missing' | 'restored';
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+
+  return normalized;
+}
+
+function loadRunQuery(): RunQuery {
+  const nodeRequire = Function('return require')() as NodeRequire;
+  return (nodeRequire('../steampipe') as { runQuery: RunQuery }).runQuery;
+}
+
+function loadAssetInventoryConfig(): Partial<AssetInventoryRuntimeConfig> | undefined {
+  const nodeRequire = Function('return require')() as NodeRequire;
+  const { getConfig } = nodeRequire('../app-config') as {
+    getConfig: () => { assetInventory?: Partial<AssetInventoryRuntimeConfig> };
+  };
+  return getConfig().assetInventory;
+}
+
+function loadOpenAssetDb(): (dbPath?: string) => AssetDb {
+  const nodeRequire = Function('return require')() as NodeRequire;
+  return (nodeRequire('./asset-db') as { openAssetDb: (dbPath?: string) => AssetDb }).openAssetDb;
+}
+
+function insertSyncRun(db: AssetDb, runId: string, startedAt: string, summary: AssetSyncRunSummary): void {
+  db.prepare(`
+    insert into asset_sync_runs (
+      id, status, started_at, summary_json
+    ) values (
+      @id, 'running', @startedAt, @summaryJson
+    )
+  `).run({
+    id: runId,
+    startedAt,
+    summaryJson: JSON.stringify(summary),
+  });
+}
+
+function updateSyncRun(
+  db: AssetDb,
+  runId: string,
+  status: 'completed' | 'partial' | 'failed',
+  summary: AssetSyncRunSummary,
+): void {
+  db.prepare(`
+    update asset_sync_runs set
+      status = @status,
+      finished_at = @finishedAt,
+      summary_json = @summaryJson,
+      error = @error
+    where id = @id
+  `).run({
+    id: runId,
+    status,
+    finishedAt: summary.finishedAt,
+    summaryJson: JSON.stringify(summary),
+    error: summary.failed.map((failure) => `${failure.resourceType}: ${failure.error}`).join('\n'),
+  });
+}
+
+function safeUpdateSyncRun(
+  db: AssetDb,
+  runId: string,
+  status: 'completed' | 'partial' | 'failed',
+  summary: AssetSyncRunSummary,
+): void {
+  try {
+    updateSyncRun(db, runId, status, summary);
+  } catch {
+    // The sync summary is the primary result; run history is best-effort.
+  }
+}
+
+function syncRunStatus(summary: AssetSyncRunSummary): 'completed' | 'partial' | 'failed' {
+  if (summary.failed.length === 0) return 'completed';
+  if (summary.selected.length > 0 && summary.failed.length >= summary.selected.length) return 'failed';
+  return 'partial';
+}
 
 export function upsertDiscoveredAssets(db: AssetDb, assets: AssetRecord[], now: string): AssetSyncSummary {
   const summary: AssetSyncSummary = { discovered: 0, changed: 0, rediscovered: 0 };

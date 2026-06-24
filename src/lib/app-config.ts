@@ -54,6 +54,24 @@ export interface PrivateAgentConfig {
   maxToolResultBytes: number;
 }
 
+export interface AssetInventoryConfig {
+  enabled: boolean;
+  dbProvider: 'sqlite' | string;
+  sqlitePath: string;
+  syncOnDemandOnly: boolean;
+  adminTokenHash: string;
+  supportedResourceTypes: string[];
+}
+
+export const DEFAULT_ASSET_INVENTORY_CONFIG: AssetInventoryConfig = {
+  enabled: true,
+  dbProvider: 'sqlite',
+  sqlitePath: 'data/awsops.db',
+  syncOnDemandOnly: true,
+  adminTokenHash: '',
+  supportedResourceTypes: ['ec2_instance', 's3_bucket'],
+};
+
 // External datasource types (Grafana-style) / 외부 데이터소스 타입 (Grafana 스타일)
 export type DatasourceType = 'prometheus' | 'loki' | 'tempo' | 'clickhouse' | 'jaeger' | 'dynatrace' | 'datadog';
 
@@ -108,6 +126,7 @@ export interface AppConfig {
   snsTopicArn?: string;               // SNS topic ARN for email notifications / 이메일 알림용 SNS 토픽 ARN
   notificationEmails?: string[];      // Mailing list for report/benchmark notifications / 리포트/벤치마크 알림 메일링 리스트
   notificationEnabled?: boolean;      // Enable auto-notification on report completion / 리포트 완료 시 자동 알림 활성화
+  assetInventory?: AssetInventoryConfig;
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -147,6 +166,7 @@ const DEFAULT_CONFIG: AppConfig = {
     queryCacheTtlSec: 300,
     maxToolResultBytes: 200000,
   },
+  assetInventory: DEFAULT_ASSET_INVENTORY_CONFIG,
 };
 
 // 캐시된 config (60초 TTL) / Cached config with 60s TTL
