@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Header from '@/components/layout/Header';
 import StatsCard from '@/components/dashboard/StatsCard';
 import StatusBadge from '@/components/dashboard/StatusBadge';
@@ -154,6 +154,8 @@ export default function AssetsPage() {
   const [saving, setSaving] = useState(false);
   const [customFields, setCustomFields] = useState<CustomFieldDefinition[]>([]);
   const [form, setForm] = useState<MetadataForm>(EMPTY_FORM);
+  const selectedIdRef = useRef<string | null>(null);
+  const detailRequestSeq = useRef(0);
   const [filters, setFilters] = useState({
     q: '',
     service: '',
@@ -215,17 +217,38 @@ export default function AssetsPage() {
     }
   }, [fetchJson]);
 
-  const fetchDetail = useCallback(async (assetId: string) => {
+  const selectAsset = (assetId: string | null) => {
+    selectedIdRef.current = assetId;
+    setSelectedId(assetId);
+  };
+
+  const fetchDetail = useCallback(async (assetId: string, signal?: AbortSignal) => {
+    const requestSeq = detailRequestSeq.current + 1;
+    detailRequestSeq.current = requestSeq;
+    const isCurrentRequest = () => (
+      detailRequestSeq.current === requestSeq
+      && selectedIdRef.current === assetId
+      && !signal?.aborted
+    );
+
     setDetailLoading(true);
     setError('');
     try {
-      const data = await fetchJson<AssetDetail>(`/awsops/api/assets/${encodeURIComponent(assetId)}`);
+      const data = await fetchJson<AssetDetail>(`/awsops/api/assets/${encodeURIComponent(assetId)}`, { signal });
+      if (!isCurrentRequest()) return;
+      if (data.id !== assetId) {
+        setDetail(null);
+        setForm(EMPTY_FORM);
+        setError(t('assets.detailFailed'));
+        return;
+      }
       setDetail(data);
       setForm(metadataToForm(data.metadata));
     } catch (err) {
+      if (!isCurrentRequest()) return;
       setError(err instanceof Error ? err.message : t('assets.detailFailed'));
     } finally {
-      setDetailLoading(false);
+      if (isCurrentRequest()) setDetailLoading(false);
     }
   }, [fetchJson, t]);
 
@@ -238,7 +261,19 @@ export default function AssetsPage() {
   }, [fetchCustomFields]);
 
   useEffect(() => {
-    if (selectedId) fetchDetail(selectedId);
+    selectedIdRef.current = selectedId;
+    if (!selectedId) {
+      detailRequestSeq.current += 1;
+      setDetail(null);
+      setDetailLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    fetchDetail(selectedId, controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, [fetchDetail, selectedId]);
 
   const serviceOptions = useMemo(() => uniqueValues(rows || [], 'service'), [rows]);
@@ -336,16 +371,25 @@ export default function AssetsPage() {
   };
 
   const saveMetadata = async () => {
-    if (!selectedId) return;
+    const targetId = selectedId;
+    if (!targetId) return;
+    if (detail?.id !== targetId) {
+      setError(t('assets.detailFailed'));
+      await fetchDetail(targetId);
+      return;
+    }
+
     setSaving(true);
     setError('');
     try {
-      await fetchJson<AssetDetail>(`/awsops/api/assets/${encodeURIComponent(selectedId)}`, {
+      await fetchJson<AssetDetail>(`/awsops/api/assets/${encodeURIComponent(targetId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formToPayload(form)),
       });
-      await fetchDetail(selectedId);
+      if (selectedIdRef.current === targetId) {
+        await fetchDetail(targetId);
+      }
       await fetchAssets();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('assets.saveFailed'));
@@ -481,7 +525,7 @@ export default function AssetsPage() {
           columns={columns}
           data={loading ? undefined : rows || []}
           onRowClick={(row) => {
-            setSelectedId(row.id);
+            selectAsset(row.id);
             setDetail(null);
           }}
         />
@@ -506,7 +550,7 @@ export default function AssetsPage() {
           <button
             className="flex-1 cursor-default"
             aria-label={t('common.close')}
-            onClick={() => setSelectedId(null)}
+            onClick={() => selectAsset(null)}
           />
           <aside className="h-full w-full max-w-2xl overflow-y-auto border-l border-navy-600 bg-navy-900 shadow-2xl">
             <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-navy-600 bg-navy-900 px-5 py-4">
@@ -518,7 +562,7 @@ export default function AssetsPage() {
                 <p className="mt-1 truncate text-xs font-mono text-gray-500">{selectedId}</p>
               </div>
               <button
-                onClick={() => setSelectedId(null)}
+                onClick={() => selectAsset(null)}
                 className="rounded-lg p-2 text-gray-500 hover:bg-navy-700 hover:text-gray-200 transition-colors"
                 title={t('common.close')}
               >
@@ -547,7 +591,7 @@ export default function AssetsPage() {
                     <h3 className="text-sm font-semibold text-white">{t('assets.metadata')}</h3>
                     <button
                       onClick={saveMetadata}
-                      disabled={saving}
+                      disabled={saving || detail.id !== selectedId}
                       className="inline-flex min-w-0 items-center justify-center gap-2 rounded-lg border border-accent-cyan/40 bg-accent-cyan/10 px-3 py-2 text-sm text-accent-cyan hover:bg-accent-cyan/20 disabled:opacity-60 transition-colors"
                     >
                       <Save size={14} />
