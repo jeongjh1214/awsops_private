@@ -29,6 +29,7 @@ try {
   const { makeAssetId, stableJsonHash } = require(join(outDir, 'asset-id.js'));
   const {
     buildAssetInventoryContext,
+    detectS3GovernanceConversation,
     detectAssetInventoryQuestion,
     formatAssetInventoryContext,
   } = require(join(outDir, 'asset-ai.js'));
@@ -39,6 +40,11 @@ try {
   assert.equal(detectAssetInventoryQuestion('EC2 CPU 사용률을 CloudWatch에서 확인해줘'), false);
   assert.equal(detectAssetInventoryQuestion('Terraform module metadata 정리해줘'), false);
   assert.equal(detectAssetInventoryQuestion('EC2 instance metadata options 상태 보여줘'), false);
+  assert.equal(detectS3GovernanceConversation([
+    { role: 'user', content: 'S3 관리대장에서 개인정보 포함 버킷 보여줘' },
+    { role: 'assistant', content: '저장된 S3 관리대장 기준입니다.' },
+    { role: 'user', content: '그중 유효기간 미적용만 보여줘' },
+  ]), true);
 
   const db = openAssetDb(dbPath);
   const now = '2026-06-24T00:00:00.000Z';
@@ -255,7 +261,8 @@ try {
 
   const routeSource = readFileSync('src/app/api/ai/route.ts', 'utf8');
   assert.match(routeSource, /openAssetDbReadOnly/);
-  assert.doesNotMatch(routeSource, /import\s+\{\s*openAssetDb\s*\}\s+from ['"]@\/lib\/assets\/asset-db['"]/);
+  assert.match(routeSource, /ensureAssetDbMigrated\(\)/);
+  assert.match(routeSource, /detectS3GovernanceConversation\(messages\)/);
   assert.match(routeSource, /buildAssetInventoryContext\(db, lastMessage, \{ accountId, limit: 150 \}\)/);
   assert.match(routeSource, /return analyzeAssetInventory\(messages, modelKey, accountId\)/);
   const assetAnalyzeSource = routeSource.slice(

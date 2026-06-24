@@ -93,6 +93,7 @@ const navGroups: NavGroup[] = [
     items: [
       { labelKey: 'sidebar.ebs', href: '/ebs', icon: HardDrive },
       { labelKey: 'sidebar.s3', href: '/s3', icon: Database },
+      { labelKey: 'sidebar.s3Governance', href: '/s3-governance', icon: ClipboardCheck },
       { labelKey: 'sidebar.rds', href: '/rds', icon: Database },
       { labelKey: 'sidebar.dynamodb', href: '/dynamodb', icon: Table },
       { labelKey: 'sidebar.elasticache', href: '/elasticache', icon: Database },
@@ -154,7 +155,7 @@ export default function Sidebar() {
   const isActive = (href: string) => {
     const path = pathname.replace('/awsops', '') || '/';
     if (href === '/') return path === '/';
-    return path.startsWith(href);
+    return path === href || path.startsWith(`${href}/`);
   };
 
   const toggleMenu = (href: string) => {

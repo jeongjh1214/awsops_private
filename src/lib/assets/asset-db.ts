@@ -130,6 +130,41 @@ export function migrateAssetDb(db: AssetDb): void {
       summary_json text not null default '{}',
       error text not null default ''
     );
+
+    create table if not exists s3_governance_records (
+      stable_key text primary key,
+      account_id text not null,
+      account_name text not null default '',
+      phase text not null default '',
+      bucket_name text not null,
+      owner_team text not null default '',
+      purpose text not null default '',
+      history text not null default '',
+      contains_personal_info integer,
+      pii_retention_aware integer,
+      pii_retention_applied integer,
+      pii_retention_period text not null default '',
+      remarks text not null default '',
+      updated_by text not null default '',
+      updated_at text not null,
+      created_at text not null,
+      unique(account_id, bucket_name)
+    );
+
+    create table if not exists s3_governance_events (
+      id text primary key,
+      stable_key text not null,
+      account_id text not null,
+      bucket_name text not null,
+      event_type text not null,
+      event_source text not null,
+      summary text not null,
+      before_json text not null default '{}',
+      after_json text not null default '{}',
+      created_by text not null default '',
+      created_at text not null,
+      foreign key(stable_key) references s3_governance_records(stable_key) on delete cascade
+    );
   `);
 
   ensureAssetChangeEventsForeignKey(db);
@@ -138,6 +173,9 @@ export function migrateAssetDb(db: AssetDb): void {
     create index if not exists idx_asset_records_lookup on asset_records(account_id, region, service, resource_type);
     create index if not exists idx_asset_records_active on asset_records(is_active, last_seen_at);
     create index if not exists idx_asset_events_asset on asset_change_events(asset_id, created_at);
+    create index if not exists idx_s3_governance_records_account on s3_governance_records(account_id, bucket_name);
+    create index if not exists idx_s3_governance_records_phase_owner on s3_governance_records(phase, owner_team);
+    create index if not exists idx_s3_governance_events_record on s3_governance_events(stable_key, created_at);
   `);
 }
 

@@ -1,5 +1,6 @@
 import type { AssetDb } from './asset-db';
 import { listAssets, type AssetListFilters, type AssetListRow } from './asset-repository';
+import { listS3GovernanceRecords, type S3GovernanceFilters, type S3GovernanceRow } from './s3-governance';
 
 export interface AssetInventoryContextOptions {
   accountId?: string;
@@ -43,6 +44,38 @@ export interface AssetInventoryContext {
   };
 }
 
+export interface S3GovernanceContextRow {
+  stable_key: string;
+  account_id: string;
+  account_name: string;
+  phase: string;
+  bucket_name: string;
+  owner_team: string;
+  purpose: string;
+  history: string;
+  contains_personal_info: boolean | null;
+  pii_retention_aware: boolean | null;
+  pii_retention_applied: boolean | null;
+  pii_retention_period: string;
+  remarks: string;
+  asset_is_active: boolean | null;
+  asset_last_seen_at: string;
+}
+
+export interface S3GovernanceContext {
+  question: string;
+  filters: S3GovernanceFilters;
+  rows: S3GovernanceContextRow[];
+  total: number;
+  limit: number;
+  summary: {
+    activeCount: number;
+    missingOrUnlinkedCount: number;
+    personalInfoCount: number;
+    retentionNotAppliedCount: number;
+  };
+}
+
 const LEDGER_ANCHOR_KEYWORDS = [
   '자산관리',
   '클라우드 자산',
@@ -66,13 +99,54 @@ const LEDGER_DETAIL_KEYWORDS = [
   'purpose',
 ];
 
+const S3_GOVERNANCE_KEYWORDS = [
+  's3 관리대장',
+  's3 자산관리',
+  'bucket register',
+  'bucket governance',
+  '버킷 관리대장',
+  '개인정보 데이터 유효기간',
+  '개인정보 유효기간',
+  '유효기간 적용',
+  'pii retention',
+  'retention applied',
+];
+
 export function detectAssetInventoryQuestion(question: string): boolean {
   const normalized = normalize(question);
+  if (detectS3GovernanceQuestion(question)) return true;
   if (LEDGER_ANCHOR_KEYWORDS.some((keyword) => normalized.includes(normalize(keyword)))) return true;
 
   const hasLedgerContext = normalized.includes('자산') || /\bassets?\b/.test(normalized);
   if (!hasLedgerContext) return false;
   return LEDGER_DETAIL_KEYWORDS.some((keyword) => normalized.includes(normalize(keyword)));
+}
+
+export function detectS3GovernanceQuestion(question: string): boolean {
+  const normalized = normalize(question);
+  const mentionsS3 = /\b(s3|bucket|buckets)\b/.test(normalized) || normalized.includes('버킷');
+  const mentionsGovernance = S3_GOVERNANCE_KEYWORDS.some((keyword) => normalized.includes(normalize(keyword)));
+  if (mentionsS3 && mentionsGovernance) return true;
+
+  if (!mentionsS3) return false;
+  return (
+    normalized.includes('담당조직')
+    || normalized.includes('용도')
+    || normalized.includes('비고')
+    || normalized.includes('이력')
+    || normalized.includes('개인정보')
+    || normalized.includes('유효기간')
+    || normalized.includes('retention')
+    || normalized.includes('owner team')
+  );
+}
+
+export function detectS3GovernanceConversation(messages: Array<{ role: string; content: string }>): boolean {
+  const recentUserMessages = messages
+    .filter((message) => message.role === 'user')
+    .slice(-3)
+    .map((message) => message.content);
+  return recentUserMessages.some(detectS3GovernanceQuestion);
 }
 
 export function buildAssetInventoryContext(
@@ -116,6 +190,47 @@ export function formatAssetInventoryContext(context: AssetInventoryContext): str
   ].join('\n');
 }
 
+export function buildS3GovernanceContext(
+  db: AssetDb,
+  question: string,
+  opts: AssetInventoryContextOptions = {},
+): S3GovernanceContext {
+  const limit = normalizeLimit(opts.limit);
+  const filters = inferS3GovernanceFilters(question);
+  if (opts.accountId) filters.accountId = opts.accountId;
+  const result = listS3GovernanceRecords(db, { ...filters, limit, offset: 0 });
+  const rows = result.rows.map(toS3GovernanceContextRow);
+
+  return {
+    question,
+    filters,
+    rows,
+    total: result.total,
+    limit: result.limit,
+    summary: summarizeS3GovernanceRows(rows),
+  };
+}
+
+export function formatS3GovernanceContext(context: S3GovernanceContext): string {
+  const payload = {
+    source: 'stored_s3_governance_register_db',
+    note: 'This is a saved S3 governance register, not a live AWS API query.',
+    filters: context.filters,
+    total: context.total,
+    returned_rows: context.rows.length,
+    summary: context.summary,
+    rows: context.rows,
+  };
+
+  return [
+    `--- STORED S3 GOVERNANCE REGISTER CONTEXT (${context.rows.length}/${context.total} rows) ---`,
+    'Use only this saved S3 governance register context for S3 governance answers.',
+    '```json',
+    JSON.stringify(payload, null, 2),
+    '```',
+  ].join('\n');
+}
+
 function inferAssetInventoryFilters(question: string): AssetListFilters {
   const normalized = normalize(question);
   const filters: AssetListFilters = {};
@@ -137,6 +252,51 @@ function inferAssetInventoryFilters(question: string): AssetListFilters {
 
   const phase = inferPhase(normalized);
   if (phase) filters.phase = phase;
+
+  return filters;
+}
+
+function inferS3GovernanceFilters(question: string): S3GovernanceFilters {
+  const normalized = normalize(question);
+  const filters: S3GovernanceFilters = {};
+
+  const phase = inferPhase(normalized);
+  if (phase) filters.phase = phase;
+
+  if (
+    normalized.includes('삭제')
+    || normalized.includes('누락')
+    || normalized.includes('missing')
+    || normalized.includes('deleted')
+  ) {
+    filters.active = false;
+  }
+
+  if (
+    normalized.includes('개인정보 있음')
+    || normalized.includes('개인정보 포함')
+    || /\bpii\b/.test(normalized)
+    || normalized.includes('personal info')
+  ) {
+    filters.containsPersonalInfo = true;
+  }
+
+  if (
+    normalized.includes('유효기간 인지 안')
+    || normalized.includes('retention unaware')
+  ) {
+    filters.piiRetentionAware = false;
+  }
+
+  if (
+    normalized.includes('유효기간 적용 안')
+    || normalized.includes('적용 안')
+    || normalized.includes('미적용')
+    || normalized.includes('not applied')
+    || normalized.includes('unapplied')
+  ) {
+    filters.piiRetentionApplied = false;
+  }
 
   return filters;
 }
@@ -186,6 +346,47 @@ function summarizeRows(rows: AssetInventoryContextRow[]): AssetInventoryContext[
   }
 
   return { serviceCounts, metadataMissingCount };
+}
+
+function toS3GovernanceContextRow(row: S3GovernanceRow): S3GovernanceContextRow {
+  return {
+    stable_key: row.stable_key,
+    account_id: row.account_id,
+    account_name: row.account_name,
+    phase: row.phase,
+    bucket_name: row.bucket_name,
+    owner_team: row.owner_team,
+    purpose: truncate(row.purpose, 180),
+    history: truncate(row.history, 240),
+    contains_personal_info: toNullableBoolean(row.contains_personal_info),
+    pii_retention_aware: toNullableBoolean(row.pii_retention_aware),
+    pii_retention_applied: toNullableBoolean(row.pii_retention_applied),
+    pii_retention_period: row.pii_retention_period,
+    remarks: truncate(row.remarks, 180),
+    asset_is_active: row.asset_is_active === null ? null : row.asset_is_active === 1,
+    asset_last_seen_at: row.asset_last_seen_at ?? '',
+  };
+}
+
+function summarizeS3GovernanceRows(rows: S3GovernanceContextRow[]): S3GovernanceContext['summary'] {
+  let activeCount = 0;
+  let missingOrUnlinkedCount = 0;
+  let personalInfoCount = 0;
+  let retentionNotAppliedCount = 0;
+
+  for (const row of rows) {
+    if (row.asset_is_active === true) activeCount += 1;
+    if (row.asset_is_active !== true) missingOrUnlinkedCount += 1;
+    if (row.contains_personal_info === true) personalInfoCount += 1;
+    if (row.pii_retention_applied === false) retentionNotAppliedCount += 1;
+  }
+
+  return {
+    activeCount,
+    missingOrUnlinkedCount,
+    personalInfoCount,
+    retentionNotAppliedCount,
+  };
 }
 
 function isMetadataMissing(row: AssetListRow): boolean {

@@ -70,6 +70,7 @@
   "sidebar.storageDb": "Storage & DB",
   "sidebar.ebs": "EBS",
   "sidebar.s3": "S3",
+  "sidebar.s3Governance": "S3 Register",
   "sidebar.rds": "RDS",
   "sidebar.dynamodb": "DynamoDB",
   "sidebar.elasticache": "ElastiCache",

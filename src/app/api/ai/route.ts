@@ -24,11 +24,14 @@ import type { DatasourceType } from '@/lib/app-config';
 import { queryDatasource } from '@/lib/datasource-client';
 import { detectDatasourceTypes, DATASOURCE_TYPES } from '@/lib/datasource-registry';
 import { DATASOURCE_QUERY_PROMPTS } from '@/lib/datasource-prompts';
-import { openAssetDbReadOnly } from '@/lib/assets/asset-db';
+import { openAssetDb, openAssetDbReadOnly } from '@/lib/assets/asset-db';
 import {
   buildAssetInventoryContext,
+  buildS3GovernanceContext,
   detectAssetInventoryQuestion,
+  detectS3GovernanceConversation,
   formatAssetInventoryContext,
+  formatS3GovernanceContext,
 } from '@/lib/assets/asset-ai';
 import {
   getPrivateBedrockRuntimeContext,
@@ -233,6 +236,7 @@ const ROUTE_REGISTRY: Record<string, RouteConfig> = {
     ],
     examples: [
       '"자산관리 관리대장에서 담당조직 누락된 S3 버킷" → asset-inventory',
+      '"S3 관리대장에서 개인정보 유효기간 미적용 버킷" → asset-inventory',
       '"클라우드 자산 owner team metadata missing" → asset-inventory',
       '"개인정보 포함 자산의 module과 phase 현황" → asset-inventory',
       '"asset inventory owner team 목록" → asset-inventory',
@@ -435,7 +439,7 @@ Classification rules:
 - "idle-scan" is for finding unused/idle AWS resources (EBS, EIP, stopped EC2, old snapshots). Use instead of "cost" for waste/idle resource questions.
 - "trace-analyze" is for distributed tracing analysis (Tempo/Jaeger). Service dependencies, latency bottlenecks, error propagation. Use instead of "datasource" for tracing questions.
 - "incident" is for multi-source incident/outage analysis. Cross-correlates Prometheus + Loki + Tempo + CloudWatch. Use instead of "monitoring" for incident/outage analysis.
-- "asset-inventory" is for saved asset ledger questions about 자산관리, 관리대장, 담당조직/담당 팀, owner team, module, metadata, 개인정보, phase, purpose, and missing metadata. It is NOT live AWS discovery.
+- "asset-inventory" is for saved asset ledger questions about 자산관리, 관리대장, S3 관리대장, 담당조직/담당 팀, owner team, module, metadata, 개인정보, 개인정보 유효기간, phase, purpose, and missing metadata. It is NOT live AWS discovery.
 - "cost" is for GENERAL AWS billing, forecast, budgets only. NOT for service-specific optimization (use eks-optimize, db-optimize, msk-optimize, idle-scan instead).
 
 Examples:
@@ -994,18 +998,29 @@ const ASSET_INVENTORY_SYSTEM_PROMPT = `주어진 자산관리 DB 컨텍스트만
 실시간 AWS 조회가 아니라 저장된 자산 원장 기반이라고 명시하세요.
 컨텍스트에 없거나 확실하지 않으면 모른다고 답변하세요.
 write action 제안은 가능하지만 수행하지 마세요.
-담당조직, module, phase, purpose, 개인정보 포함 여부, metadata 누락 상태를 우선적으로 근거로 삼으세요.`;
+담당조직, module, phase, purpose, 개인정보 포함 여부, 개인정보 유효기간 인지/적용 여부, metadata 누락 상태를 우선적으로 근거로 삼으세요.`;
 
 async function analyzeAssetInventory(
   messages: Array<{role: string; content: string}>,
   modelKey?: string,
   accountId?: string,
 ): Promise<{ content: string; via: string; queriedResources: string[]; usedTools: string[] }> {
+  ensureAssetDbMigrated();
   const db = openAssetDbReadOnly(getConfig().assetInventory?.sqlitePath);
   try {
     const lastMessage = messages[messages.length - 1]?.content || '';
-    const context = buildAssetInventoryContext(db, lastMessage, { accountId, limit: 150 });
-    const formattedContext = formatAssetInventoryContext(context);
+    const isS3Governance = detectS3GovernanceConversation(messages);
+    let formattedContext: string;
+    let rowCount = 0;
+    if (isS3Governance) {
+      const context = buildS3GovernanceContext(db, lastMessage, { accountId, limit: 150 });
+      formattedContext = formatS3GovernanceContext(context);
+      rowCount = context.rows.length;
+    } else {
+      const context = buildAssetInventoryContext(db, lastMessage, { accountId, limit: 150 });
+      formattedContext = formatAssetInventoryContext(context);
+      rowCount = context.rows.length;
+    }
     const bedrockMessages = [{
       role: 'user',
       content: `${lastMessage}\n\n${formattedContext}`,
@@ -1026,13 +1041,18 @@ async function analyzeAssetInventory(
     const result = JSON.parse(new TextDecoder().decode(response.body));
     return {
       content: result.content?.[0]?.text || '',
-      via: `Cloud Asset Inventory (${context.rows.length} rows)`,
-      queriedResources: ['asset-inventory'],
-      usedTools: ['asset-db:listAssets(read-only)'],
+      via: `${isS3Governance ? 'S3 Governance Register' : 'Cloud Asset Inventory'} (${rowCount} rows)`,
+      queriedResources: [isS3Governance ? 's3-governance' : 'asset-inventory'],
+      usedTools: [isS3Governance ? 'asset-db:listS3GovernanceRecords(read-only)' : 'asset-db:listAssets(read-only)'],
     };
   } finally {
     db.close();
   }
+}
+
+function ensureAssetDbMigrated(): void {
+  const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
+  db.close();
 }
 
 // POST handler — SSE streaming with step-by-step progress events
