@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAssetAdmin, isAssetAdminAuthError } from '@/lib/assets/asset-admin';
 import { openAssetDb } from '@/lib/assets/asset-db';
 import { deactivateCustomField, updateCustomField } from '@/lib/assets/custom-fields';
+import { getConfig } from '@/lib/app-config';
 
 export const runtime = 'nodejs';
 
@@ -31,7 +32,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: 'Body must be an object' }, { status: 400 });
   }
 
-  const db = openAssetDb();
+  const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
   try {
     const field = updateCustomField(db, id, body as Parameters<typeof updateCustomField>[2]);
     if (!field) {
@@ -57,7 +58,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   const authError = authorize(request);
   if (authError) return authError;
 
-  const db = openAssetDb();
+  const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
   try {
     const field = deactivateCustomField(db, id, request.headers.get('x-awsops-asset-admin-user') || 'admin');
     if (!field) {

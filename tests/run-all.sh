@@ -28,6 +28,18 @@ for f in tests/structure/test-*.sh; do
   [ -f "$f" ] && bash "$f"
 done
 
+# ── Asset Inventory Tests ──
+echo "# Asset inventory tests"
+for f in tests/assets/test_*.mjs; do
+  if [ -f "$f" ]; then
+    if node "$f"; then
+      pass "$f"
+    else
+      fail "$f"
+    fi
+  fi
+done
+
 # ── Core Structure Assertions ──
 echo "# Core structure"
 

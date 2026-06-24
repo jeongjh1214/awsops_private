@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "bash tests/run-all.sh",
     "lint": "next lint"
   },
   "dependencies": {

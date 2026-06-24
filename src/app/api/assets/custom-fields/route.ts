@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAssetAdmin, isAssetAdminAuthError } from '@/lib/assets/asset-admin';
 import { openAssetDb } from '@/lib/assets/asset-db';
 import { createCustomField, listCustomFields } from '@/lib/assets/custom-fields';
+import { getConfig } from '@/lib/app-config';
 
 export const runtime = 'nodejs';
 
@@ -9,7 +10,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const includeInactive = parseBoolean(searchParams.get('includeInactive')) ?? false;
 
-  const db = openAssetDb();
+  const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
   try {
     return NextResponse.json({ fields: listCustomFields(db, includeInactive) });
   } finally {
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Body must be an object' }, { status: 400 });
   }
 
-  const db = openAssetDb();
+  const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
   try {
     const field = createCustomField(db, body as Parameters<typeof createCustomField>[1]);
     return NextResponse.json({ field }, { status: 201 });

@@ -5,6 +5,7 @@ import {
   updateAssetMetadata,
   type AssetMetadataUpdateInput,
 } from '@/lib/assets/asset-repository';
+import { getConfig } from '@/lib/app-config';
 
 export const runtime = 'nodejs';
 
@@ -34,7 +35,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 });
   }
 
-  const db = openAssetDb();
+  const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
   try {
     const detail = getAssetDetail(db, assetId);
     if (!detail) {
@@ -64,7 +65,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
-  const db = openAssetDb();
+  const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
   try {
     const updated = updateAssetMetadata(db, assetId, parsed.input);
     if (!updated) {

@@ -17,7 +17,7 @@ export interface PrivateBedrockConfigLike {
   };
 }
 
-const NEXT_PRIVATE_HANDLERS = new Set(['sql', 'datasource', 'auto-collect']);
+const NEXT_PRIVATE_HANDLERS = new Set(['sql', 'datasource', 'auto-collect', 'asset-inventory']);
 const LEGACY_DEFAULT_MODEL_ID = 'anthropic.claude-sonnet-4-6';
 
 export function shouldDelegateRouteToLocalPrivateAgent(

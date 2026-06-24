@@ -1006,11 +1006,10 @@ async function analyzeAssetInventory(
     const lastMessage = messages[messages.length - 1]?.content || '';
     const context = buildAssetInventoryContext(db, lastMessage, { accountId, limit: 150 });
     const formattedContext = formatAssetInventoryContext(context);
-    const bedrockMessages = messages.slice(-10).map((message: any) => ({
-      role: message.role,
-      content: message.content,
-    }));
-    bedrockMessages[bedrockMessages.length - 1].content += `\n\n${formattedContext}`;
+    const bedrockMessages = [{
+      role: 'user',
+      content: `${lastMessage}\n\n${formattedContext}`,
+    }];
 
     const body = JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',

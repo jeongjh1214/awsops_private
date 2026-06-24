@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: booleanParams.error }, { status: 400 });
   }
 
-  const db = openAssetDb();
+  const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
   try {
     const filters: AssetListFilters = {
       accountId: optionalString(searchParams.get('accountId')),
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'csvText is required' }, { status: 400 });
     }
 
-    const db = openAssetDb();
+    const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
     try {
       if (action === 'import-preview') {
         return NextResponse.json(previewAssetCsvImport(db, body.csvText));

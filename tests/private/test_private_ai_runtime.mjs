@@ -31,6 +31,11 @@ try {
     'private mode must keep auto-collect routes inside the Next API',
   );
   assert.equal(
+    runtime.shouldDelegateRouteToLocalPrivateAgent('local-mcp-langgraph', { handler: 'asset-inventory' }),
+    false,
+    'private mode must keep asset inventory routes inside the Next API',
+  );
+  assert.equal(
     runtime.shouldDelegateRouteToLocalPrivateAgent('local-mcp-langgraph', { gateway: 'network' }),
     true,
     'private mode may delegate AgentCore-only routes to the local private agent',

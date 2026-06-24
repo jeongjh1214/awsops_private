@@ -258,6 +258,12 @@ try {
   assert.doesNotMatch(routeSource, /import\s+\{\s*openAssetDb\s*\}\s+from ['"]@\/lib\/assets\/asset-db['"]/);
   assert.match(routeSource, /buildAssetInventoryContext\(db, lastMessage, \{ accountId, limit: 150 \}\)/);
   assert.match(routeSource, /return analyzeAssetInventory\(messages, modelKey, accountId\)/);
+  const assetAnalyzeSource = routeSource.slice(
+    routeSource.indexOf('async function analyzeAssetInventory'),
+    routeSource.indexOf('// POST handler'),
+  );
+  assert.doesNotMatch(assetAnalyzeSource, /messages\.slice\(-10\)\.map/);
+  assert.match(assetAnalyzeSource, /content: `\$\{lastMessage\}\\n\\n\$\{formattedContext\}`/);
 
   db.close();
 } finally {
