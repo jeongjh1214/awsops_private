@@ -210,6 +210,23 @@ steampipe query "select nspname from pg_namespace where nspname like 'aws_%' ord
 steampipe query "select table_schema, table_name from information_schema.tables where table_schema like 'aws_%' and table_name = 'aws_s3_bucket' order by 1"
 ```
 
+If only the `aws` schema exists, query it directly and align `data/config.json` with that connection name:
+
+```bash
+steampipe query "select name from aws.aws_s3_bucket limit 5"
+```
+
+```json
+"connectionName": "aws"
+```
+
+Steampipe does not read AWSops `data/config.json` by itself. The start script writes `~/.steampipe/config/awsops-private.spc` and starts the Steampipe service with the S3 endpoint environment. If the service was started before those settings existed, stop it and start it through the AWSops script:
+
+```bash
+steampipe service stop --force
+bash scripts/16-start-steampipe-private.sh
+```
+
 AI returns 502
 
 The private agent is not running or cannot call Bedrock. Check:

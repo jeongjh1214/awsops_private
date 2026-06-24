@@ -165,6 +165,21 @@ If your Steampipe config has an aggregator connection, plain `aws_s3_bucket` can
 steampipe query "select name from aws_123456789012.aws_s3_bucket limit 5"
 ```
 
+If `pg_namespace` only shows `aws` and no `aws_*` schema, test the loaded single AWS connection directly:
+
+```bash
+steampipe query "select name from aws.aws_s3_bucket limit 5"
+```
+
+When the single `aws` schema is intentional, set `accounts[0].connectionName` in `data/config.json` to `"aws"`.
+
+Remember that Steampipe does not read AWSops `data/config.json` directly. The start script converts AWSops config into `~/.steampipe/config/awsops-private.spc` and exports endpoint environment variables before starting the Steampipe service. If the service was already running from an older shell, `steampipe query` will keep using that older service process until it is stopped and started again:
+
+```bash
+steampipe service stop --force
+bash scripts/16-start-steampipe-private.sh
+```
+
 If that schema says the table does not exist, generate the AWSops Steampipe connection file from `data/config.json` and restart Steampipe:
 
 ```bash

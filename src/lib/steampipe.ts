@@ -227,7 +227,10 @@ function buildSearchPath(accountId?: string): string {
   if (!account) return '';
   const connectionName = account.connectionName || `aws_${sanitized}`;
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(connectionName)) return '';
-  return `public, ${connectionName}, kubernetes, trivy`;
+  const schemas = ['public', connectionName];
+  if (connectionName !== 'aws') schemas.push('aws');
+  schemas.push('kubernetes', 'trivy');
+  return schemas.join(', ');
 }
 
 export async function runQuery<T = Record<string, unknown>>(
