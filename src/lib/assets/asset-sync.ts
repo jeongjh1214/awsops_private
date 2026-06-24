@@ -105,13 +105,15 @@ export function upsertDiscoveredAssets(db: AssetDb, assets: AssetRecord[], now: 
       const changed = existing.last_hash !== normalizedAsset.lastHash;
       const wasInactive = existing.is_active === 0;
 
+      const nextAsset = {
+        ...normalizedAsset,
+        firstDiscoveredAt: existing.first_discovered_at,
+        createdAt: existing.created_at,
+        isActive: true,
+      };
+
       if (changed || wasInactive) {
-        updateAsset.run(toSqlParams({
-          ...normalizedAsset,
-          firstDiscoveredAt: existing.first_discovered_at,
-          createdAt: existing.created_at,
-          isActive: true,
-        }));
+        updateAsset.run(toSqlParams(nextAsset));
       } else {
         touchAsset.run({
           id: normalizedAsset.id,
@@ -127,7 +129,7 @@ export function upsertDiscoveredAssets(db: AssetDb, assets: AssetRecord[], now: 
           eventType: 'changed',
           summary: `Changed ${normalizedAsset.resourceType} ${normalizedAsset.resourceName}`,
           beforeJson: rowToAssetRecord(existing),
-          afterJson: normalizedAsset,
+          afterJson: nextAsset,
           now,
         }));
         summary.changed += 1;
@@ -139,7 +141,7 @@ export function upsertDiscoveredAssets(db: AssetDb, assets: AssetRecord[], now: 
           eventType: 'restored',
           summary: `Restored ${normalizedAsset.resourceType} ${normalizedAsset.resourceName}`,
           beforeJson: rowToAssetRecord(existing),
-          afterJson: { ...normalizedAsset, isActive: true },
+          afterJson: nextAsset,
           now,
         }));
         summary.rediscovered += 1;

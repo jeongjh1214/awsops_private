@@ -99,8 +99,11 @@ try {
   assert.equal(record.created_at, firstSeen);
   assert.equal(record.updated_at, changedAt);
 
-  events = db.prepare('select event_type from asset_change_events where asset_id = ? order by created_at').all(discoveredAsset.id);
+  events = db.prepare('select event_type, after_json from asset_change_events where asset_id = ? order by created_at').all(discoveredAsset.id);
   assert.deepEqual(events.map((event) => event.event_type), ['discovered', 'changed']);
+  let afterJson = JSON.parse(events.at(-1).after_json);
+  assert.equal(afterJson.createdAt, firstSeen);
+  assert.equal(afterJson.firstDiscoveredAt, firstSeen);
 
   markMissingAssets(db, new Set(), missingAt);
   record = db.prepare('select is_active, updated_at from asset_records where id = ?').get(discoveredAsset.id);
@@ -131,8 +134,11 @@ try {
   assert.equal(record.first_discovered_at, firstSeen);
   assert.equal(record.created_at, firstSeen);
 
-  events = db.prepare('select event_type from asset_change_events where asset_id = ? order by created_at').all(discoveredAsset.id);
+  events = db.prepare('select event_type, after_json from asset_change_events where asset_id = ? order by created_at').all(discoveredAsset.id);
   assert.deepEqual(events.map((event) => event.event_type), ['discovered', 'changed', 'missing', 'restored']);
+  afterJson = JSON.parse(events.at(-1).after_json);
+  assert.equal(afterJson.createdAt, firstSeen);
+  assert.equal(afterJson.firstDiscoveredAt, firstSeen);
 
   const s3Seen = '2026-06-24T00:20:00.000Z';
   const scopedEc2MissingAt = '2026-06-24T00:25:00.000Z';
