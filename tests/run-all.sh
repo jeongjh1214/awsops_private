@@ -40,6 +40,24 @@ for f in tests/assets/test_*.mjs; do
   fi
 done
 
+# ── Private Runtime Tests ──
+echo "# Private runtime tests"
+if python3 -m unittest discover -s tests/private -p 'test_*.py' >/dev/null; then
+  pass "tests/private Python unittest suite"
+else
+  fail "tests/private Python unittest suite"
+fi
+
+for f in tests/private/test_*.mjs; do
+  if [ -f "$f" ]; then
+    if node "$f"; then
+      pass "$f"
+    else
+      fail "$f"
+    fi
+  fi
+done
+
 # ── Core Structure Assertions ──
 echo "# Core structure"
 
