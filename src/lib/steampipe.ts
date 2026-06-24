@@ -1,7 +1,7 @@
 import { Pool, Client } from 'pg';
 import { execFileSync } from 'child_process';
 import NodeCache from 'node-cache';
-import { getConfig, isMultiAccount, getAccounts, ALL_ACCOUNTS } from '@/lib/app-config';
+import { getConfig, getAccounts, ALL_ACCOUNTS } from '@/lib/app-config';
 import type { AccountConfig } from '@/lib/app-config';
 
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
@@ -220,12 +220,14 @@ function validateQuery(sql: string): void {
 // Build search_path for account-scoped queries / 계정별 search_path 생성
 function buildSearchPath(accountId?: string): string {
   if (!accountId || accountId === ALL_ACCOUNTS) return '';
-  if (!isMultiAccount()) return '';
   const sanitized = accountId.replace(/[^0-9]/g, '');
   if (sanitized.length !== 12) return '';
   const accounts = getAccounts();
-  if (!accounts.some(a => a.accountId === sanitized)) return '';
-  return `public, aws_${sanitized}, kubernetes, trivy`;
+  const account = accounts.find(a => a.accountId === sanitized);
+  if (!account) return '';
+  const connectionName = account.connectionName || `aws_${sanitized}`;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(connectionName)) return '';
+  return `public, ${connectionName}, kubernetes, trivy`;
 }
 
 export async function runQuery<T = Record<string, unknown>>(

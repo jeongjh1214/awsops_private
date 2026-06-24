@@ -57,9 +57,14 @@ export async function POST(request: NextRequest) {
     if (resourceTypesInput.error) {
       return NextResponse.json({ error: resourceTypesInput.error }, { status: 400 });
     }
+    const accountId = resolveSyncAccountId(body.accountId);
+    if (accountId.error) {
+      return NextResponse.json({ error: accountId.error }, { status: 400 });
+    }
 
     const summary = await runAssetSync({
       resourceTypes: resourceTypesInput.resourceTypes,
+      accountId: accountId.value,
       dependencies: {
         runQuery,
         getAssetInventoryConfig: () => getConfig().assetInventory,
@@ -110,6 +115,22 @@ function optionalNumber(value: string | null): number | undefined {
   if (value === null || value.trim() === '') return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function resolveSyncAccountId(value: unknown): { value?: string; error?: string } {
+  const requested = optionalString(value);
+  if (requested) {
+    return /^\d{12}$/.test(requested)
+      ? { value: requested }
+      : { error: 'accountId must be a 12-digit AWS account ID' };
+  }
+
+  const accounts = getConfig().accounts || [];
+  if (accounts.length === 1 && /^\d{12}$/.test(accounts[0].accountId)) {
+    return { value: accounts[0].accountId };
+  }
+
+  return {};
 }
 
 function parseBooleanParams(

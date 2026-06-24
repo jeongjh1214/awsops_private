@@ -57,6 +57,7 @@ export interface AssetSyncRunSummary {
 
 export interface RunAssetSyncOptions {
   resourceTypes?: string[];
+  accountId?: string;
   now?: string;
   sqlitePath?: string;
   dependencies?: {
@@ -68,7 +69,7 @@ export interface RunAssetSyncOptions {
 
 export type RunQuery = <T = Record<string, unknown>>(
   sql: string,
-  opts?: { bustCache?: boolean },
+  opts?: { bustCache?: boolean; accountId?: string },
 ) => Promise<{ rows: T[]; error?: string }>;
 
 export interface AssetInventoryRuntimeConfig {
@@ -232,7 +233,10 @@ export async function runAssetSync(options: RunAssetSyncOptions = {}): Promise<A
     for (const resourceType of summary.selected) {
       const query = ASSET_SYNC_QUERIES[resourceType];
       try {
-        const result = await runQuery<SteampipeRow>(query.sql, { bustCache: true });
+        const result = await runQuery<SteampipeRow>(query.sql, {
+          bustCache: true,
+          accountId: options.accountId,
+        });
         if (result.error) {
           summary.failed.push({ resourceType, error: result.error });
           continue;

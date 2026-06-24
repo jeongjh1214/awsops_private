@@ -184,7 +184,7 @@ AWS_PROFILE=awsops-local-profile aws s3api list-buckets \
   --endpoint-url https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com
 
 bash scripts/16-start-steampipe-private.sh
-steampipe query "select name from aws_s3_bucket limit 5"
+steampipe query "select name from aws_123456789012.aws_s3_bucket limit 5"
 ```
 
 If Steampipe says `the region 'us-east-1' is wrong; expecting 'ap-northeast-2'`, add this to `~/.steampipe/config/aws.spc` inside the AWS connection:
@@ -193,6 +193,12 @@ If Steampipe says `the region 'us-east-1' is wrong; expecting 'ap-northeast-2'`,
 default_region = "ap-northeast-2"
 regions = ["ap-northeast-2"]
 s3_force_path_style = true
+```
+
+If it still checks other regions, inspect all loaded Steampipe config files. Steampipe loads every `.spc` file under `~/.steampipe/config`.
+
+```bash
+grep -R "regions\\|default_region\\|aggregator\\|connections" ~/.steampipe/config/*.spc
 ```
 
 AI returns 502

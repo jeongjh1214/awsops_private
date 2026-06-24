@@ -302,7 +302,7 @@ export async function PUT(request: NextRequest) {
       // --- Step 2: Create Steampipe connection (~/.steampipe/config/aws.spc) ---
       try {
         const spcPath = `${homedir()}/.steampipe/config/aws.spc`;
-        const connectionBlock = `\nconnection "${connectionName}" {\n  plugin  = "aws"\n  profile = "${profileName}"\n  regions = ["${accountRegion}"]\n  ignore_error_codes = ["AccessDenied", "AccessDeniedException", "NotAuthorized", "UnauthorizedAccess", "AuthorizationError"]\n}\n`;
+        const connectionBlock = `\nconnection "${connectionName}" {\n  plugin  = "aws"\n  profile = "${profileName}"\n  default_region = "${accountRegion}"\n  regions = ["${accountRegion}"]\n  s3_force_path_style = true\n  ignore_error_codes = ["AccessDenied", "AccessDeniedException", "NotAuthorized", "UnauthorizedAccess", "AuthorizationError"]\n}\n`;
 
         let existingSpc = '';
         try { existingSpc = readFileSyncFs(spcPath, 'utf-8'); } catch { /* file may not exist */ }

@@ -159,11 +159,23 @@ steampipe query "select instance_id from aws_ec2_instance limit 1"
 steampipe query "select name from aws_s3_bucket limit 1"
 ```
 
+If your Steampipe config has an aggregator connection, plain `aws_s3_bucket` can fan out across every `aws_*` connection. Test the configured account schema directly:
+
+```bash
+steampipe query "select name from aws_123456789012.aws_s3_bucket limit 5"
+```
+
+Find leftover wildcard or non-Seoul region config:
+
+```bash
+grep -R "regions\\|default_region\\|aggregator\\|connections" ~/.steampipe/config/*.spc
+```
+
 If EC2 works but S3 returns no buckets or endpoint errors, restart Steampipe through the private start script so the configured S3 VPCE endpoint is injected into the Steampipe service process:
 
 ```bash
 bash scripts/16-start-steampipe-private.sh
-steampipe query "select name from aws_s3_bucket limit 5"
+steampipe query "select name from aws_123456789012.aws_s3_bucket limit 5"
 ```
 
 Cloud Assets sync uses Steampipe and the existing Steampipe AWS connection. It does not create AWS resources or VPC endpoints.

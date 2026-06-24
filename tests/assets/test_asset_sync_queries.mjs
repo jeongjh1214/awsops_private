@@ -147,6 +147,29 @@ try {
   } finally {
     unsupportedDb.close();
   }
+
+  const scopedDbPath = join(outDir, 'scoped-sync.db');
+  let capturedRunQueryOpts;
+  const scopedSummary = await runAssetSync({
+    resourceTypes: ['s3_bucket'],
+    accountId: '123456789012',
+    sqlitePath: scopedDbPath,
+    dependencies: {
+      getAssetInventoryConfig: () => ({
+        enabled: true,
+        dbProvider: 'sqlite',
+        sqlitePath: scopedDbPath,
+        supportedResourceTypes: ['s3_bucket'],
+      }),
+      openAssetDb,
+      runQuery: async (_sql, opts) => {
+        capturedRunQueryOpts = opts;
+        return { rows: [] };
+      },
+    },
+  });
+  assert.deepEqual(capturedRunQueryOpts, { bustCache: true, accountId: '123456789012' });
+  assert.deepEqual(scopedSummary.selected, ['s3_bucket']);
 } finally {
   rmSync(outDir, { recursive: true, force: true });
 }

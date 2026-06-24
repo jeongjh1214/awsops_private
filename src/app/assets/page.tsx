@@ -349,7 +349,9 @@ export default function AssetsPage() {
       const data = await fetchJson<{ ok: boolean; summary: SyncSummary }>('/awsops/api/assets?action=sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          accountId: currentAccountId && currentAccountId !== '__all__' ? currentAccountId : undefined,
+        }),
       });
       setSyncSummary(data.summary);
       await fetchAssets();

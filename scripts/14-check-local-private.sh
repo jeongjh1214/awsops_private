@@ -139,6 +139,12 @@ fi
 
 if [ -f "$HOME/.steampipe/config/aws.spc" ]; then
   ok "~/.steampipe/config/aws.spc exists"
+  if grep -R --include='*.spc' -Eq 'regions[[:space:]]*=[[:space:]]*\[[^]]*("[*]"|"us-east-1")' "$HOME/.steampipe/config" 2>/dev/null; then
+    warn "Some Steampipe .spc file still contains wildcard or us-east-1 regions; inspect with: grep -R \"regions\\|default_region\\|aggregator\\|connections\" ~/.steampipe/config/*.spc"
+  fi
+  if grep -R --include='*.spc' -Eq 'type[[:space:]]*=[[:space:]]*"?(aggregator)"?' "$HOME/.steampipe/config" 2>/dev/null; then
+    warn "A Steampipe aggregator connection exists; plain aws_s3_bucket queries may fan out across aws_* connections"
+  fi
   if grep -Eq '^[[:space:]]*default_region[[:space:]]*=[[:space:]]*"ap-northeast-2"' "$HOME/.steampipe/config/aws.spc"; then
     ok "Steampipe AWS config has default_region = \"ap-northeast-2\""
   else
