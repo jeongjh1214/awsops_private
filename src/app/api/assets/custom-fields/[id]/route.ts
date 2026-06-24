@@ -7,13 +7,14 @@ import { getConfig } from '@/lib/app-config';
 export const runtime = 'nodejs';
 
 interface RouteContext {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const id = decodeFieldId(context.params.id);
+  const params = await context.params;
+  const id = decodeFieldId(params.id);
   if (!id) {
     return NextResponse.json({ error: 'Invalid custom field id' }, { status: 400 });
   }
@@ -50,7 +51,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 }
 
 export async function DELETE(request: NextRequest, context: RouteContext) {
-  const id = decodeFieldId(context.params.id);
+  const params = await context.params;
+  const id = decodeFieldId(params.id);
   if (!id) {
     return NextResponse.json({ error: 'Invalid custom field id' }, { status: 400 });
   }

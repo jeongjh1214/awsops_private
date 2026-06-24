@@ -10,9 +10,9 @@ import { getConfig } from '@/lib/app-config';
 export const runtime = 'nodejs';
 
 interface RouteContext {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 const STRING_FIELDS = [
@@ -30,7 +30,8 @@ const STRING_FIELDS = [
 ] as const;
 
 export async function GET(_request: NextRequest, context: RouteContext) {
-  const assetId = decodeAssetId(context.params.id);
+  const { id } = await context.params;
+  const assetId = decodeAssetId(id);
   if (!assetId) {
     return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 });
   }
@@ -48,7 +49,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const assetId = decodeAssetId(context.params.id);
+  const { id } = await context.params;
+  const assetId = decodeAssetId(id);
   if (!assetId) {
     return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 });
   }
