@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { resolve } from 'path';
-import type { AssetDb } from './asset-db';
+import { openAssetDb as defaultOpenAssetDb, type AssetDb } from './asset-db';
 import { normalizeEc2Instance, normalizeS3Bucket } from './asset-normalizers';
 import type { AssetRecord } from './asset-types';
 
@@ -29,6 +29,11 @@ export interface AssetSyncQuery {
 export interface AssetSyncSelection {
   selected: string[];
   unsupported: string[];
+}
+
+export interface AssetSyncResourceTypesInput {
+  resourceTypes?: string[];
+  error?: string;
 }
 
 export interface AssetSyncFailure {
@@ -152,6 +157,14 @@ export function selectAssetSyncResourceTypes(requested?: string[], configured?: 
   return { selected, unsupported };
 }
 
+export function parseAssetSyncResourceTypesInput(value: unknown): AssetSyncResourceTypesInput {
+  if (value === undefined) return {};
+  if (!Array.isArray(value) || value.some((resourceType) => typeof resourceType !== 'string')) {
+    return { error: 'resourceTypes must be an array of strings' };
+  }
+  return { resourceTypes: value };
+}
+
 export async function runAssetSync(options: RunAssetSyncOptions = {}): Promise<AssetSyncRunSummary> {
   const assetConfig = {
     ...DEFAULT_ASSET_SYNC_CONFIG,
@@ -199,7 +212,10 @@ export async function runAssetSync(options: RunAssetSyncOptions = {}): Promise<A
     changed: 0,
     rediscovered: 0,
     missing: 0,
-    failed: [],
+    failed: selection.unsupported.map((resourceType) => ({
+      resourceType,
+      error: 'unsupported resource type',
+    })),
     startedAt,
     finishedAt: '',
   };
@@ -295,21 +311,44 @@ function uniqueStrings(values: string[]): string[] {
 }
 
 function loadRunQuery(): RunQuery {
-  const nodeRequire = Function('return require')() as NodeRequire;
-  return (nodeRequire('../steampipe') as { runQuery: RunQuery }).runQuery;
+  const cjsModule = typeof module === 'object' && typeof module.require === 'function'
+    ? module
+    : undefined;
+  if (!cjsModule) {
+    throw new Error('asset sync runQuery dependency is unavailable; pass dependencies.runQuery');
+  }
+  return (loadCjsDependency(cjsModule, ['./steampipe', '../steampipe']) as { runQuery: RunQuery }).runQuery;
 }
 
 function loadAssetInventoryConfig(): Partial<AssetInventoryRuntimeConfig> | undefined {
-  const nodeRequire = Function('return require')() as NodeRequire;
-  const { getConfig } = nodeRequire('../app-config') as {
+  const cjsModule = typeof module === 'object' && typeof module.require === 'function'
+    ? module
+    : undefined;
+  if (!cjsModule) {
+    throw new Error('asset inventory config dependency is unavailable; pass dependencies.getAssetInventoryConfig');
+  }
+  const { getConfig } = loadCjsDependency(cjsModule, ['./app-config', '../app-config']) as {
     getConfig: () => { assetInventory?: Partial<AssetInventoryRuntimeConfig> };
   };
   return getConfig().assetInventory;
 }
 
 function loadOpenAssetDb(): (dbPath?: string) => AssetDb {
-  const nodeRequire = Function('return require')() as NodeRequire;
-  return (nodeRequire('./asset-db') as { openAssetDb: (dbPath?: string) => AssetDb }).openAssetDb;
+  return defaultOpenAssetDb;
+}
+
+function loadCjsDependency(cjsModule: NodeModule, moduleIds: string[]): unknown {
+  const errors: string[] = [];
+
+  for (const moduleId of moduleIds) {
+    try {
+      return cjsModule.require(moduleId);
+    } catch (err) {
+      errors.push(`${moduleId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  throw new Error(`unable to load asset sync dependency (${errors.join('; ')})`);
 }
 
 function insertSyncRun(db: AssetDb, runId: string, startedAt: string, summary: AssetSyncRunSummary): void {
@@ -363,7 +402,9 @@ function safeUpdateSyncRun(
 
 function syncRunStatus(summary: AssetSyncRunSummary): 'completed' | 'partial' | 'failed' {
   if (summary.failed.length === 0) return 'completed';
-  if (summary.selected.length > 0 && summary.failed.length >= summary.selected.length) return 'failed';
+  if (summary.selected.length === 0) return 'failed';
+  const selectedFailures = summary.failed.filter((failure) => summary.selected.includes(failure.resourceType));
+  if (selectedFailures.length >= summary.selected.length) return 'failed';
   return 'partial';
 }
 

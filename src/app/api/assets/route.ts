@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { openAssetDb } from '@/lib/assets/asset-db';
 import { listAssets, type AssetListFilters } from '@/lib/assets/asset-repository';
-import { runAssetSync } from '@/lib/assets/asset-sync';
+import { parseAssetSyncResourceTypesInput, runAssetSync } from '@/lib/assets/asset-sync';
 import { getConfig } from '@/lib/app-config';
 import { runQuery } from '@/lib/steampipe';
 
@@ -45,12 +45,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'unsupported action' }, { status: 400 });
   }
 
-  const resourceTypes = Array.isArray(body.resourceTypes)
-    && body.resourceTypes.every((resourceType) => typeof resourceType === 'string')
-    ? body.resourceTypes
-    : undefined;
+  const resourceTypesInput = parseAssetSyncResourceTypesInput(body.resourceTypes);
+  if (resourceTypesInput.error) {
+    return NextResponse.json({ error: resourceTypesInput.error }, { status: 400 });
+  }
+
   const summary = await runAssetSync({
-    resourceTypes,
+    resourceTypes: resourceTypesInput.resourceTypes,
     dependencies: {
       runQuery,
       getAssetInventoryConfig: () => getConfig().assetInventory,
