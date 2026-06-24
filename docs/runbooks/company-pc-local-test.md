@@ -201,6 +201,15 @@ If it still checks other regions, inspect all loaded Steampipe config files. Ste
 grep -R "regions\\|default_region\\|aggregator\\|connections" ~/.steampipe/config/*.spc
 ```
 
+If `aws_123456789012.aws_s3_bucket` does not exist, the configured account connection is not loaded. Generate the AWSops connection file and restart Steampipe:
+
+```bash
+bash scripts/16-start-steampipe-private.sh
+cat ~/.steampipe/config/awsops-private.spc
+steampipe query "select nspname from pg_namespace where nspname like 'aws_%' order by 1"
+steampipe query "select table_schema, table_name from information_schema.tables where table_schema like 'aws_%' and table_name = 'aws_s3_bucket' order by 1"
+```
+
 AI returns 502
 
 The private agent is not running or cannot call Bedrock. Check:

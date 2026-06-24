@@ -159,6 +159,28 @@ else
   warn "~/.steampipe/config/aws.spc is missing; copy docs/examples/steampipe-aws.spc.example and edit it"
 fi
 
+if [ -f "$HOME/.steampipe/config/awsops-private.spc" ]; then
+  ok "~/.steampipe/config/awsops-private.spc exists"
+else
+  warn "~/.steampipe/config/awsops-private.spc is missing; run: bash scripts/16-start-steampipe-private.sh"
+fi
+
+if [ -f data/config.json ] && [ -d "$HOME/.steampipe/config" ]; then
+  python3 - <<'PY'
+import json
+from pathlib import Path
+
+cfg = json.load(open("data/config.json", encoding="utf-8"))
+accounts = cfg.get("accounts") or []
+config_text = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in (Path.home() / ".steampipe" / "config").glob("*.spc"))
+for account in accounts:
+    account_id = str(account.get("accountId") or "")
+    connection = str(account.get("connectionName") or f"aws_{account_id}")
+    status = "OK" if f'connection "{connection}"' in config_text else "MISSING"
+    print(f"       steampipe connection {connection}: {status}")
+PY
+fi
+
 echo ""
 echo -e "${CYAN}[5/6] Local HTTP services${NC}"
 if command -v curl >/dev/null 2>&1; then

@@ -165,6 +165,15 @@ If your Steampipe config has an aggregator connection, plain `aws_s3_bucket` can
 steampipe query "select name from aws_123456789012.aws_s3_bucket limit 5"
 ```
 
+If that schema says the table does not exist, generate the AWSops Steampipe connection file from `data/config.json` and restart Steampipe:
+
+```bash
+bash scripts/16-start-steampipe-private.sh
+cat ~/.steampipe/config/awsops-private.spc
+steampipe query "select nspname from pg_namespace where nspname like 'aws_%' order by 1"
+steampipe query "select table_schema, table_name from information_schema.tables where table_schema like 'aws_%' and table_name = 'aws_s3_bucket' order by 1"
+```
+
 Find leftover wildcard or non-Seoul region config:
 
 ```bash
