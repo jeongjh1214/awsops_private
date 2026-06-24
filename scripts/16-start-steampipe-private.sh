@@ -28,9 +28,17 @@ if config_path.exists():
     env = (cfg.get("environments") or {}).get(active) or {}
     endpoints = env.get("endpointUrls") or {}
     asset = cfg.get("assetInventory") or {}
+    accounts = cfg.get("accounts") or []
+    aws_profile = env.get("awsProfile") or ""
+    account = next((item for item in accounts if item.get("profile") == aws_profile), None)
+    if account is None:
+        account = next((item for item in accounts if item.get("isHost")), None)
+    if account is None and accounts:
+        account = accounts[0]
     data = {
         "ACTIVE_ENVIRONMENT": active,
-        "AWSOPS_PROFILE": env.get("awsProfile") or "",
+        "AWSOPS_PROFILE": aws_profile,
+        "AWSOPS_REGION": (account or {}).get("region") or "",
         "ENDPOINT_MODE": env.get("endpointMode") or "",
         "S3_ENDPOINT_URL": endpoints.get("s3") or "",
         "S3_SYNC_ENABLED": "yes" if "s3_bucket" in (asset.get("supportedResourceTypes") or []) else "no",
@@ -39,6 +47,7 @@ else:
     data = {
         "ACTIVE_ENVIRONMENT": "",
         "AWSOPS_PROFILE": "",
+        "AWSOPS_REGION": "",
         "ENDPOINT_MODE": "",
         "S3_ENDPOINT_URL": "",
         "S3_SYNC_ENABLED": "unknown",
@@ -55,8 +64,18 @@ echo -e "${CYAN}AWSops private Steampipe start${NC}"
 echo ""
 echo "  activeEnvironment: ${ACTIVE_ENVIRONMENT:-unknown}"
 echo "  awsProfile: ${AWSOPS_PROFILE:-not set}"
+echo "  awsRegion: ${AWSOPS_REGION:-not set}"
 echo "  endpointMode: ${ENDPOINT_MODE:-not set}"
 echo "  s3 sync enabled: ${S3_SYNC_ENABLED:-unknown}"
+
+if [ -n "${AWSOPS_REGION:-}" ]; then
+  export AWS_REGION="$AWSOPS_REGION"
+  export AWS_DEFAULT_REGION="$AWSOPS_REGION"
+  echo "  AWS_REGION: $AWS_REGION"
+else
+  echo -e "  ${YELLOW}WARN${NC} AWS region is not set in data/config.json accounts"
+  echo "       S3 VPCE calls can be signed with a default region such as us-east-1."
+fi
 
 if [ -n "${S3_ENDPOINT_URL:-}" ]; then
   export AWS_ENDPOINT_URL_S3="$S3_ENDPOINT_URL"

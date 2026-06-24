@@ -83,8 +83,15 @@ active = cfg.get("activeEnvironment")
 env = (cfg.get("environments") or {}).get(active, {})
 agent = cfg.get("agent") or {}
 accounts = cfg.get("accounts") or []
+aws_profile = env.get("awsProfile")
+account = next((item for item in accounts if item.get("profile") == aws_profile), None)
+if account is None:
+    account = next((item for item in accounts if item.get("isHost")), None)
+if account is None and accounts:
+    account = accounts[0]
 print(f"       activeEnvironment: {active}")
 print(f"       awsProfile: {env.get('awsProfile')}")
+print(f"       awsRegion: {(account or {}).get('region')}")
 print(f"       bedrockProfile: {env.get('bedrockProfile')}")
 print(f"       endpointMode: {env.get('endpointMode')}")
 print(f"       endpointUrls: {', '.join(sorted((env.get('endpointUrls') or {}).keys())) or '(none)'}")

@@ -180,6 +180,7 @@ S3 needs explicit service endpoint handling because bucket requests can use buck
 
 ```bash
 AWS_PROFILE=awsops-local-profile aws s3api list-buckets \
+  --region ap-northeast-2 \
   --endpoint-url https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com
 
 bash scripts/16-start-steampipe-private.sh
