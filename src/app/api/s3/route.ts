@@ -39,25 +39,29 @@ function normalizeS3PageRow(row: Record<string, unknown>): Record<string, unknow
     account_id: stringValue(row.account_id),
     name,
     arn: stringValue(row.arn) || (name ? `arn:aws:s3:::${name}` : ''),
-    region: stringValue(row.region) || 'global',
+    region: stringValue(row.region) || 'unknown',
     creation_date: stringValue(row.source_updated_at) || stringValue(row.creation_date),
-    versioning_enabled: false,
+    versioning_enabled: nullableBoolean(row.versioning_enabled),
     bucket_policy_is_public: false,
-    encryption_enabled: false,
+    encryption_enabled: nullableBoolean(row.encryption_enabled),
     logging_target: '',
     tags: row.tags && typeof row.tags === 'object' ? row.tags : {},
     block_public_acls: true,
     block_public_policy: true,
     ignore_public_acls: true,
     restrict_public_buckets: true,
-    server_side_encryption_configuration: null,
-    logging: null,
+    server_side_encryption_configuration: row.server_side_encryption_configuration || null,
+    logging: stringValue(row.logging_target) ? { TargetBucket: stringValue(row.logging_target) } : null,
     lifecycle_rules: null,
   };
 }
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function nullableBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
 }
 
 function emptySummary() {

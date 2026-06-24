@@ -1,4 +1,11 @@
-import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
+import {
+  GetBucketEncryptionCommand,
+  GetBucketLocationCommand,
+  GetBucketLoggingCommand,
+  GetBucketVersioningCommand,
+  ListBucketsCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { fromIni } from '@aws-sdk/credential-provider-ini';
 import { getConfig, type AccountConfig, type PrivateEnvironmentConfig } from '../app-config';
 
@@ -31,16 +38,25 @@ export async function listS3Buckets(opts?: { accountId?: string }): Promise<{ ro
 
   try {
     const result = await client.send(new ListBucketsCommand({}));
-    const rows = (result.Buckets || []).map((bucket) => {
+    const rows = await mapWithConcurrency(result.Buckets || [], 5, async (bucket) => {
       const name = bucket.Name || '';
+      const details = name
+        ? await getBucketDetails(client, name, region)
+        : { region, versioningEnabled: null, encryptionConfiguration: null, loggingTarget: '' };
       return {
         account_id: target.account.accountId,
         account_name: target.account.alias || '',
-        region: 'global',
+        region: details.region,
         name,
         id: name,
         arn: name ? `arn:aws:s3:::${name}` : '',
         status: 'available',
+        versioning_enabled: details.versioningEnabled,
+        server_side_encryption_configuration: details.encryptionConfiguration,
+        encryption_enabled: details.encryptionConfiguration !== null
+          ? Boolean(details.encryptionConfiguration)
+          : null,
+        logging_target: details.loggingTarget,
         tags: {},
         source_updated_at: bucket.CreationDate?.toISOString?.() || '',
       };
@@ -49,6 +65,65 @@ export async function listS3Buckets(opts?: { accountId?: string }): Promise<{ ro
   } catch (err) {
     return { rows: [], error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+async function getBucketDetails(
+  client: S3Client,
+  bucketName: string,
+  fallbackRegion: string,
+): Promise<{
+  region: string;
+  versioningEnabled: boolean | null;
+  encryptionConfiguration: unknown | null;
+  loggingTarget: string;
+}> {
+  const [location, versioning, encryption, logging] = await Promise.all([
+    safeSend<{ LocationConstraint?: unknown }>(client, new GetBucketLocationCommand({ Bucket: bucketName })),
+    safeSend<{ Status?: string }>(client, new GetBucketVersioningCommand({ Bucket: bucketName })),
+    safeSend<{ ServerSideEncryptionConfiguration?: unknown }>(client, new GetBucketEncryptionCommand({ Bucket: bucketName })),
+    safeSend<{ LoggingEnabled?: { TargetBucket?: string } }>(client, new GetBucketLoggingCommand({ Bucket: bucketName })),
+  ]);
+
+  return {
+    region: location ? normalizeBucketRegion(location.LocationConstraint) : fallbackRegion,
+    versioningEnabled: versioning ? versioning.Status === 'Enabled' : null,
+    encryptionConfiguration: encryption
+      ? (encryption.ServerSideEncryptionConfiguration || null)
+      : null,
+    loggingTarget: logging?.LoggingEnabled?.TargetBucket || '',
+  };
+}
+
+async function safeSend<T>(client: S3Client, command: { input: unknown }): Promise<T | null> {
+  try {
+    return await client.send(command as never) as T;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeBucketRegion(value: unknown): string {
+  if (typeof value !== 'string' || value.trim() === '') return 'us-east-1';
+  if (value === 'EU') return 'eu-west-1';
+  return value;
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+    while (nextIndex < values.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(values[currentIndex]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 function resolveS3SyncTarget(accountId?: string): S3SyncTarget | undefined {

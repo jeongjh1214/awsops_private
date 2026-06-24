@@ -69,6 +69,11 @@ export default function S3Page() {
   const publicBuckets = Number(summary?.public_buckets) || 0;
   const versioningEnabled = Number(summary?.versioning_enabled) || 0;
   const loggingCount = list.filter((r: any) => r.logging_target).length;
+  const renderTriState = (value: boolean | null | undefined) => {
+    if (value === true) return <StatusBadge status="active" />;
+    if (value === false) return <StatusBadge status="stopped" />;
+    return <span className="text-gray-500 text-xs">Unknown</span>;
+  };
 
   // Filters / 필터
   const regionList = useMemo(() => {
@@ -210,8 +215,8 @@ export default function S3Page() {
         columns={[
           { key: 'name', label: t('s3.bucketName') },
           { key: 'region', label: t('common.region') },
-          { key: 'versioning_enabled', label: t('s3.versioning'), render: (v: boolean) => <StatusBadge status={v ? 'active' : 'stopped'} /> },
-          { key: 'encryption_enabled', label: t('s3.encryption'), render: (v: boolean) => <StatusBadge status={v ? 'active' : 'stopped'} /> },
+          { key: 'versioning_enabled', label: t('s3.versioning'), render: renderTriState },
+          { key: 'encryption_enabled', label: t('s3.encryption'), render: renderTriState },
           { key: 'logging_target', label: 'Logging', render: (v: string) => v ? <StatusBadge status="active" /> : <span className="text-gray-600">--</span> },
           { key: 'bucket_policy_is_public', label: t('s3.accessControl'), render: (v: boolean) =>
             v ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-accent-red/10 text-accent-red"><span className="w-1.5 h-1.5 rounded-full bg-accent-red" />PUBLIC</span>
@@ -260,8 +265,8 @@ export default function S3Page() {
                 </Section>
 
                 <Section title="Configuration" icon={Settings}>
-                  <Row label="Versioning" value={selected.versioning_enabled ? 'Enabled' : 'Disabled'} />
-                  <Row label="Encryption" value={selected.server_side_encryption_configuration ? 'Configured' : 'Not configured'} />
+                  <Row label="Versioning" value={selected.versioning_enabled === null ? 'Unknown' : selected.versioning_enabled ? 'Enabled' : 'Disabled'} />
+                  <Row label="Encryption" value={selected.encryption_enabled === null ? 'Unknown' : selected.encryption_enabled ? 'Configured' : 'Not configured'} />
                   <Row label="Lifecycle Rules" value={selected.lifecycle_rules ? `${Array.isArray(selected.lifecycle_rules) ? selected.lifecycle_rules.length : 'Yes'} rule(s)` : 'None'} />
                 </Section>
 
