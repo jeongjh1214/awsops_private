@@ -149,7 +149,7 @@ try {
   }
 
   const scopedDbPath = join(outDir, 'scoped-sync.db');
-  let capturedRunQueryOpts;
+  let capturedS3Opts;
   const scopedSummary = await runAssetSync({
     resourceTypes: ['s3_bucket'],
     accountId: '123456789012',
@@ -162,14 +162,24 @@ try {
         supportedResourceTypes: ['s3_bucket'],
       }),
       openAssetDb,
-      runQuery: async (_sql, opts) => {
-        capturedRunQueryOpts = opts;
-        return { rows: [] };
+      runQuery: async () => {
+        throw new Error('S3 bucket sync should not use Steampipe runQuery');
+      },
+      listS3Buckets: async (opts) => {
+        capturedS3Opts = opts;
+        return {
+          rows: [{
+            account_id: '123456789012',
+            name: 'logs',
+            creation_date: '2026-06-24T00:00:00.000Z',
+          }],
+        };
       },
     },
   });
-  assert.deepEqual(capturedRunQueryOpts, { bustCache: true, accountId: '123456789012' });
+  assert.deepEqual(capturedS3Opts, { accountId: '123456789012' });
   assert.deepEqual(scopedSummary.selected, ['s3_bucket']);
+  assert.equal(scopedSummary.discovered, 1);
 } finally {
   rmSync(outDir, { recursive: true, force: true });
 }

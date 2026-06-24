@@ -203,6 +203,8 @@ regions = ["ap-northeast-2"]
 s3_force_path_style = true
 ```
 
+Cloud Asset Inventory S3 bucket sync does not use Steampipe. It calls S3 `ListBuckets` directly with the configured AWS profile and `endpointUrls.s3`, matching the successful `aws s3api list-buckets --endpoint-url ...` path.
+
 If it still checks other regions, inspect all loaded Steampipe config files. Steampipe loads every `.spc` file under `~/.steampipe/config`.
 
 ```bash

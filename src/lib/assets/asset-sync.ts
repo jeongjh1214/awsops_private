@@ -62,6 +62,7 @@ export interface RunAssetSyncOptions {
   sqlitePath?: string;
   dependencies?: {
     runQuery?: RunQuery;
+    listS3Buckets?: ListS3Buckets;
     getAssetInventoryConfig?: () => Partial<AssetInventoryRuntimeConfig> | undefined;
     openAssetDb?: (dbPath?: string) => AssetDb;
   };
@@ -71,6 +72,8 @@ export type RunQuery = <T = Record<string, unknown>>(
   sql: string,
   opts?: { bustCache?: boolean; accountId?: string },
 ) => Promise<{ rows: T[]; error?: string }>;
+
+export type ListS3Buckets = (opts?: { accountId?: string }) => Promise<{ rows: SteampipeRow[]; error?: string }>;
 
 export interface AssetInventoryRuntimeConfig {
   enabled: boolean;
@@ -233,10 +236,15 @@ export async function runAssetSync(options: RunAssetSyncOptions = {}): Promise<A
     for (const resourceType of summary.selected) {
       const query = ASSET_SYNC_QUERIES[resourceType];
       try {
-        const result = await runQuery<SteampipeRow>(query.sql, {
-          bustCache: true,
-          accountId: options.accountId,
-        });
+        const listS3Buckets = resourceType === 's3_bucket'
+          ? options.dependencies?.listS3Buckets ?? loadListS3Buckets()
+          : undefined;
+        const result = resourceType === 's3_bucket'
+          ? await listS3Buckets!({ accountId: options.accountId })
+          : await runQuery<SteampipeRow>(query.sql, {
+              bustCache: true,
+              accountId: options.accountId,
+            });
         if (result.error) {
           summary.failed.push({ resourceType, error: result.error });
           continue;
@@ -322,6 +330,16 @@ function loadRunQuery(): RunQuery {
     throw new Error('asset sync runQuery dependency is unavailable; pass dependencies.runQuery');
   }
   return (loadCjsDependency(cjsModule, ['./steampipe', '../steampipe']) as { runQuery: RunQuery }).runQuery;
+}
+
+function loadListS3Buckets(): ListS3Buckets {
+  const cjsModule = typeof module === 'object' && typeof module.require === 'function'
+    ? module
+    : undefined;
+  if (!cjsModule) {
+    throw new Error('S3 asset sync dependency is unavailable; pass dependencies.listS3Buckets');
+  }
+  return (loadCjsDependency(cjsModule, ['./s3-sdk-sync', '../s3-sdk-sync']) as { listS3Buckets: ListS3Buckets }).listS3Buckets;
 }
 
 function loadAssetInventoryConfig(): Partial<AssetInventoryRuntimeConfig> | undefined {

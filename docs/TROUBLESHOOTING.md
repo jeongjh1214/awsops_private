@@ -212,6 +212,8 @@ steampipe query "select name from aws_123456789012.aws_s3_bucket limit 5"
 
 Cloud Assets sync uses Steampipe and the existing Steampipe AWS connection. It does not create AWS resources or VPC endpoints.
 
+S3 bucket sync is the exception: AWSops calls S3 `ListBuckets` directly through the AWS SDK using `data/config.json` profile, region, and `endpointUrls.s3`. This intentionally avoids Steampipe AWS plugin S3 table hydrate behavior when direct `aws s3api list-buckets` works but `steampipe query ...aws_s3_bucket...` fails.
+
 ## Cloud Asset Inventory AI Has No Data
 
 AI answers for 자산관리 / Cloud Asset Inventory questions use the saved SQLite ledger only. Run a Cloud Assets sync first, then check the DB file:
