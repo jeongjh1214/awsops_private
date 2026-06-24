@@ -51,6 +51,17 @@ try {
   assert.equal(discoveredAsset.sourceTable, 'aws_ec2_instance');
   assert.deepEqual(discoveredAsset.tags, { Name: 'app-01', Environment: 'prod' });
 
+  const ec2FallbackIdentityAsset = normalizeEc2Instance({
+    account_id: '123456789012',
+    region: 'ap-northeast-2',
+    instance_id: '',
+    id: 'i-fallback',
+    instance_state: 'running',
+  }, firstSeen);
+
+  assert.equal(ec2FallbackIdentityAsset.id, 'aws:123456789012:ap-northeast-2:ec2:ec2_instance:i-fallback');
+  assert.equal(ec2FallbackIdentityAsset.resourceId, 'i-fallback');
+
   assert.deepEqual(
     upsertDiscoveredAssets(db, [discoveredAsset], firstSeen),
     { discovered: 1, changed: 0, rediscovered: 0 },
@@ -141,6 +152,17 @@ try {
   assert.equal(s3Asset.nativeState, 'available');
   assert.equal(s3Asset.resourceId, 'logs-prod');
   assert.equal(s3Asset.resourceName, 'logs-prod');
+
+  const s3FallbackIdentityAsset = normalizeS3Bucket({
+    account_id: '123456789012',
+    name: '   ',
+    bucket_name: 'logs-fallback',
+  }, s3Seen);
+
+  assert.equal(s3FallbackIdentityAsset.id, 'aws:123456789012:global:s3:s3_bucket:logs-fallback');
+  assert.equal(s3FallbackIdentityAsset.resourceId, 'logs-fallback');
+  assert.equal(s3FallbackIdentityAsset.resourceName, 'logs-fallback');
+  assert.equal(s3FallbackIdentityAsset.arn, 'arn:aws:s3:::logs-fallback');
 
   assert.deepEqual(
     upsertDiscoveredAssets(db, [s3Asset], s3Seen),

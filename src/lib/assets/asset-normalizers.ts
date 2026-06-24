@@ -116,7 +116,11 @@ function normalizeBaseAsset(input: BaseAssetInput): AssetRecord {
 function firstString(row: SteampipeRow, keys: string[]): string {
   for (const key of keys) {
     const value = row[key];
-    if (typeof value === 'string') return value;
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      if (normalized) return normalized;
+      continue;
+    }
     if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   }
   return '';
