@@ -102,6 +102,57 @@ steampipe service status
 
 Confirm the AWS profile and region in the Steampipe connection file. For local/dev environments, the configured profile must be able to reach AWS through the approved endpoint path.
 
+## Cloud Assets Sync Fails
+
+Confirm the SQLite DB path is writable:
+
+```bash
+mkdir -p data
+touch data/awsops.db
+```
+
+Confirm `data/config.json` only enables currently supported resource types:
+
+```bash
+python3 - <<'PY'
+import json
+cfg=json.load(open('data/config.json'))
+print(cfg.get('assetInventory', {}).get('supportedResourceTypes', []))
+PY
+```
+
+Current built-in sync support is `ec2_instance` and `s3_bucket`.
+
+Confirm Steampipe can read the selected resources:
+
+```bash
+steampipe query "select instance_id from aws_ec2_instance limit 1"
+steampipe query "select name from aws_s3_bucket limit 1"
+```
+
+Cloud Assets sync uses Steampipe and the existing Steampipe AWS connection. It does not create AWS resources or VPC endpoints.
+
+## Cloud Asset Inventory AI Has No Data
+
+AI answers for 자산관리 / Cloud Asset Inventory questions use the saved SQLite ledger only. Run a Cloud Assets sync first, then check the DB file:
+
+```bash
+ls -lh data/awsops.db
+sqlite3 data/awsops.db 'select service, resource_type, count(*) from asset_records group by 1,2;'
+```
+
+If a specific account is selected in the UI, the AI context is scoped to that `account_id`.
+
+## Cloud Asset Admin Token Fails
+
+Admin custom field changes require `x-awsops-asset-admin-token` and a matching SHA-256 hash in `AWSOPS_ASSET_ADMIN_TOKEN_HASH` or `assetInventory.adminTokenHash`.
+
+Generate a hash:
+
+```bash
+node -e "const {createHash}=require('crypto'); const token=process.argv[1]; console.log('sha256:'+createHash('sha256').update(token).digest('hex'))" '<admin-token>'
+```
+
 ## AI Chat Returns 502
 
 Check the local agent first:

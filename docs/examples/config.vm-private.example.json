@@ -54,6 +54,17 @@
     "queryCacheTtlSec": 300,
     "maxToolResultBytes": 200000
   },
+  "assetInventory": {
+    "enabled": true,
+    "dbProvider": "sqlite",
+    "sqlitePath": "data/awsops.db",
+    "syncOnDemandOnly": true,
+    "adminTokenHash": "",
+    "supportedResourceTypes": [
+      "ec2_instance",
+      "s3_bucket"
+    ]
+  },
   "accounts": [
     {
       "accountId": "123456789012",

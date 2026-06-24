@@ -34,11 +34,27 @@ If a resource is needed, request it through the approved platform/security proce
 2. Copy `docs/examples/config.vm-private.example.json` to `data/config.json`.
 3. Set `activeEnvironment` to `local`.
 4. Fill `endpointUrls` with approved VPCE hostnames.
-5. Start Steampipe.
-6. Run `npm run dev`.
-7. Run `bash scripts/13-start-private-agent.sh`.
-8. Open `http://127.0.0.1:3000/awsops`.
-9. If something is missing, run `bash scripts/14-check-local-private.sh`.
+5. Review `assetInventory.supportedResourceTypes`; keep only resource types approved for collection.
+6. Create the local data directory with `mkdir -p data`.
+7. Start Steampipe.
+8. Run `npm run dev`.
+9. Run `bash scripts/13-start-private-agent.sh`.
+10. Open `http://127.0.0.1:3000/awsops`.
+11. If something is missing, run `bash scripts/14-check-local-private.sh`.
+
+## Cloud Asset Inventory Notes
+
+Cloud Assets stores discovered AWS resources and human-managed metadata in local SQLite at `assetInventory.sqlitePath`.
+
+Current sync support is intentionally allowlisted by `assetInventory.supportedResourceTypes`. Keep the sample default (`ec2_instance`, `s3_bucket`) until additional resource normalizers and Steampipe queries are added.
+
+Admin-only custom field changes require `x-awsops-asset-admin-token`. Configure `AWSOPS_ASSET_ADMIN_TOKEN_HASH` or `assetInventory.adminTokenHash` with:
+
+```bash
+node -e "const {createHash}=require('crypto'); const token=process.argv[1]; console.log('sha256:'+createHash('sha256').update(token).digest('hex'))" '<admin-token>'
+```
+
+AI answers for 자산관리 / Cloud Asset Inventory questions use the saved SQLite ledger only. They do not perform live AWS discovery, Steampipe sync, CSV import, or metadata updates.
 
 ## Development Rules
 
