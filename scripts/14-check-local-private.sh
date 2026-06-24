@@ -139,6 +139,11 @@ fi
 
 if [ -f "$HOME/.steampipe/config/aws.spc" ]; then
   ok "~/.steampipe/config/aws.spc exists"
+  if grep -Eq '^[[:space:]]*default_region[[:space:]]*=[[:space:]]*"ap-northeast-2"' "$HOME/.steampipe/config/aws.spc"; then
+    ok "Steampipe AWS config has default_region = \"ap-northeast-2\""
+  else
+    warn "Set default_region = \"ap-northeast-2\" in ~/.steampipe/config/aws.spc for S3 VPCE signing"
+  fi
   if grep -Eq '^[[:space:]]*s3_force_path_style[[:space:]]*=[[:space:]]*true' "$HOME/.steampipe/config/aws.spc"; then
     ok "Steampipe AWS config has s3_force_path_style = true"
   else

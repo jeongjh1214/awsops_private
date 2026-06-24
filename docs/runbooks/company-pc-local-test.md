@@ -66,7 +66,7 @@ mkdir -p ~/.steampipe/config
 cp docs/examples/steampipe-aws.spc.example ~/.steampipe/config/aws.spc
 ```
 
-Edit `~/.steampipe/config/aws.spc` and set the profile and region. Keep `s3_force_path_style = true` for explicit S3 VPCE access.
+Edit `~/.steampipe/config/aws.spc` and set the profile and region. Keep `default_region = "ap-northeast-2"` and `s3_force_path_style = true` for explicit S3 VPCE access.
 
 Start Steampipe:
 
@@ -185,6 +185,14 @@ AWS_PROFILE=awsops-local-profile aws s3api list-buckets \
 
 bash scripts/16-start-steampipe-private.sh
 steampipe query "select name from aws_s3_bucket limit 5"
+```
+
+If Steampipe says `the region 'us-east-1' is wrong; expecting 'ap-northeast-2'`, add this to `~/.steampipe/config/aws.spc` inside the AWS connection:
+
+```hcl
+default_region = "ap-northeast-2"
+regions = ["ap-northeast-2"]
+s3_force_path_style = true
 ```
 
 AI returns 502

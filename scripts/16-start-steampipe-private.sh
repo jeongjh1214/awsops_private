@@ -66,7 +66,7 @@ echo "  activeEnvironment: ${ACTIVE_ENVIRONMENT:-unknown}"
 echo "  awsProfile: ${AWSOPS_PROFILE:-not set}"
 echo "  awsRegion: ${AWSOPS_REGION:-not set}"
 echo "  endpointMode: ${ENDPOINT_MODE:-not set}"
-echo "  s3 sync enabled: ${S3_SYNC_ENABLED:-unknown}"
+echo "  s3 bucket sync configured: ${S3_SYNC_ENABLED:-unknown}"
 
 if [ -n "${AWSOPS_REGION:-}" ]; then
   export AWS_REGION="$AWSOPS_REGION"

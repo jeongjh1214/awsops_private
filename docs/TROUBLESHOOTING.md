@@ -64,6 +64,18 @@ bash scripts/16-start-steampipe-private.sh
 The script exports `AWS_ENDPOINT_URL_S3` for the Steampipe service process. Keep `s3_force_path_style = true` in `~/.steampipe/config/aws.spc`.
 It also exports `AWS_REGION` and `AWS_DEFAULT_REGION` from the matching account in `data/config.json`; this prevents S3 signing errors such as `the region 'us-east-1' is wrong; expecting 'ap-northeast-2'`.
 
+If the same region error still appears in Steampipe, set the AWS plugin default region explicitly:
+
+```hcl
+connection "aws" {
+  plugin = "aws"
+  profile = "awsops-local-profile"
+  default_region = "ap-northeast-2"
+  regions = ["ap-northeast-2"]
+  s3_force_path_style = true
+}
+```
+
 For AI Assistant, confirm the private agent is using the expected Bedrock profile and Runtime endpoint:
 
 ```bash
