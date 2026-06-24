@@ -133,6 +133,14 @@ Confirm the AWS profile and region in the Steampipe connection file. For local/d
 
 ## Cloud Assets Sync Fails
 
+For S3/Steampipe failures, collect one diagnostic log first:
+
+```bash
+bash scripts/17-diagnose-steampipe-s3.sh --restart
+```
+
+The log is written to `data/steampipe-s3-diagnosis.log`.
+
 Confirm the SQLite DB path is writable:
 
 ```bash

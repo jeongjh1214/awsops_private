@@ -127,6 +127,14 @@ Run:
 bash scripts/14-check-local-private.sh
 ```
 
+For S3/Steampipe issues:
+
+```bash
+bash scripts/17-diagnose-steampipe-s3.sh --restart
+```
+
+Review `data/steampipe-s3-diagnosis.log`.
+
 Manual checks:
 
 ```bash
