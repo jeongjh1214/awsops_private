@@ -2,6 +2,7 @@ import type { AssetDb } from './asset-db';
 import { listAssets, type AssetListFilters, type AssetListRow } from './asset-repository';
 
 export interface AssetInventoryContextOptions {
+  accountId?: string;
   limit?: number;
 }
 
@@ -42,25 +43,36 @@ export interface AssetInventoryContext {
   };
 }
 
-const QUESTION_KEYWORDS = [
+const LEDGER_ANCHOR_KEYWORDS = [
   '자산관리',
   '클라우드 자산',
+  '관리대장',
+  'asset inventory',
+  'asset register',
+  'asset ledger',
+  'cloud asset',
+  'cloud assets',
+];
+
+const LEDGER_DETAIL_KEYWORDS = [
   '담당조직',
   '담당 조직',
   '담당 팀',
   'owner team',
   'module',
   'metadata',
-  '관리대장',
   '개인정보',
-  'asset inventory',
-  'asset register',
-  'asset ledger',
+  'phase',
+  'purpose',
 ];
 
 export function detectAssetInventoryQuestion(question: string): boolean {
   const normalized = normalize(question);
-  return QUESTION_KEYWORDS.some((keyword) => normalized.includes(normalize(keyword)));
+  if (LEDGER_ANCHOR_KEYWORDS.some((keyword) => normalized.includes(normalize(keyword)))) return true;
+
+  const hasLedgerContext = normalized.includes('자산') || /\bassets?\b/.test(normalized);
+  if (!hasLedgerContext) return false;
+  return LEDGER_DETAIL_KEYWORDS.some((keyword) => normalized.includes(normalize(keyword)));
 }
 
 export function buildAssetInventoryContext(
@@ -70,6 +82,7 @@ export function buildAssetInventoryContext(
 ): AssetInventoryContext {
   const limit = normalizeLimit(opts.limit);
   const filters = inferAssetInventoryFilters(question);
+  if (opts.accountId) filters.accountId = opts.accountId;
   const result = listAssets(db, { ...filters, limit, offset: 0 });
   const rows = result.rows.map(toContextRow);
 

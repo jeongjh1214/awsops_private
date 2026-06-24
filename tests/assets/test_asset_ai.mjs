@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
@@ -25,7 +25,7 @@ try {
   ], { stdio: 'pipe' });
 
   const require = createRequire(import.meta.url);
-  const { openAssetDb } = require(join(outDir, 'asset-db.js'));
+  const { openAssetDb, openAssetDbReadOnly } = require(join(outDir, 'asset-db.js'));
   const { makeAssetId, stableJsonHash } = require(join(outDir, 'asset-id.js'));
   const {
     buildAssetInventoryContext,
@@ -37,6 +37,8 @@ try {
   assert.equal(detectAssetInventoryQuestion('Which asset inventory items have missing owner team metadata?'), true);
   assert.equal(detectAssetInventoryQuestion('개인정보 포함 클라우드 자산의 module 현황은?'), true);
   assert.equal(detectAssetInventoryQuestion('EC2 CPU 사용률을 CloudWatch에서 확인해줘'), false);
+  assert.equal(detectAssetInventoryQuestion('Terraform module metadata 정리해줘'), false);
+  assert.equal(detectAssetInventoryQuestion('EC2 instance metadata options 상태 보여줘'), false);
 
   const db = openAssetDb(dbPath);
   const now = '2026-06-24T00:00:00.000Z';
@@ -72,6 +74,14 @@ try {
     resourceType: 'ec2_instance',
     resourceId: 'i-prod-001',
   });
+  const otherAccountId = makeAssetId({
+    provider: 'aws',
+    accountId: '999999999999',
+    region: 'ap-northeast-2',
+    service: 'ec2',
+    resourceType: 'ec2_instance',
+    resourceId: 'i-other-001',
+  });
 
   insertAsset(db, stableJsonHash, {
     id: s3ProdId,
@@ -89,6 +99,20 @@ try {
       Environment: 'prod',
     }),
     sourceTable: 'aws_s3_bucket',
+    now,
+  });
+  insertAsset(db, stableJsonHash, {
+    id: otherAccountId,
+    accountId: '999999999999',
+    accountName: 'Other',
+    region: 'ap-northeast-2',
+    service: 'ec2',
+    resourceType: 'ec2_instance',
+    resourceId: 'i-other-001',
+    resourceName: 'other-prod-01',
+    arn: 'arn:aws:ec2:ap-northeast-2:999999999999:instance/i-other-001',
+    tagsJson: JSON.stringify({ Name: 'other-prod-01' }),
+    sourceTable: 'aws_ec2_instance',
     now,
   });
   insertAsset(db, stableJsonHash, {
@@ -144,6 +168,15 @@ try {
     now,
   });
   insertMetadata(db, {
+    assetId: otherAccountId,
+    ownerTeam: 'other-team',
+    moduleName: 'other-module',
+    phase: 'prod',
+    purpose: 'other account workload',
+    containsPersonalInfo: 0,
+    now,
+  });
+  insertMetadata(db, {
     assetId: s3MissingId,
     ownerTeam: '',
     moduleName: '',
@@ -189,6 +222,14 @@ try {
   assert.equal(devContext.total, 1);
   assert.equal(devContext.rows[0].id, ec2DevId);
 
+  const scopedContext = buildAssetInventoryContext(db, 'prod EC2 클라우드 자산', {
+    accountId: '123456789012',
+  });
+  assert.equal(scopedContext.filters.accountId, '123456789012');
+  assert.equal(scopedContext.total, 1);
+  assert.equal(scopedContext.rows[0].id, ec2ProdId);
+  assert.equal(scopedContext.rows.every((row) => row.account_id === '123456789012'), true);
+
   const formatted = formatAssetInventoryContext(s3Context);
   assert.match(formatted, /owner_team/);
   assert.match(formatted, /module_name/);
@@ -200,9 +241,23 @@ try {
   assert.doesNotMatch(formatted, /do-not-leak-this-entire-tags-json/);
   assert.doesNotMatch(formatted, /very\/long\/path\/that\/should\/not\/be\/needed/);
 
+  const readOnlyDb = openAssetDbReadOnly(dbPath);
+  assert.equal(buildAssetInventoryContext(readOnlyDb, 'asset inventory').total, 5);
+  readOnlyDb.close();
+
+  const missingDbPath = join(outDir, 'missing-read-only.db');
+  assert.throws(() => openAssetDbReadOnly(missingDbPath), /does not exist/);
+  assert.equal(existsSync(missingDbPath), false);
+
   const source = readFileSync('src/lib/assets/asset-ai.ts', 'utf8');
   assert.doesNotMatch(source, /updateAssetMetadata|applyAssetCsvImport|previewAssetCsvImport|asset-admin|custom-fields/);
   assert.doesNotMatch(source, /\.run\s*\(|\.exec\s*\(|insert\s+into|update\s+asset_|delete\s+from/i);
+
+  const routeSource = readFileSync('src/app/api/ai/route.ts', 'utf8');
+  assert.match(routeSource, /openAssetDbReadOnly/);
+  assert.doesNotMatch(routeSource, /import\s+\{\s*openAssetDb\s*\}\s+from ['"]@\/lib\/assets\/asset-db['"]/);
+  assert.match(routeSource, /buildAssetInventoryContext\(db, lastMessage, \{ accountId, limit: 150 \}\)/);
+  assert.match(routeSource, /return analyzeAssetInventory\(messages, modelKey, accountId\)/);
 
   db.close();
 } finally {

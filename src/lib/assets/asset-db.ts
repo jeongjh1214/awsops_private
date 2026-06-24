@@ -16,13 +16,29 @@ type ForeignKeyInfo = {
   on_delete: string;
 };
 
+export function resolveAssetDbPath(dbPath: string = process.env.AWSOPS_ASSET_DB_PATH || DEFAULT_DB_PATH): string {
+  return resolve(process.cwd(), dbPath);
+}
+
 export function openAssetDb(dbPath: string = process.env.AWSOPS_ASSET_DB_PATH || DEFAULT_DB_PATH): AssetDb {
-  const dir = dirname(dbPath);
+  const resolvedPath = resolveAssetDbPath(dbPath);
+  const dir = dirname(resolvedPath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const db = new Database(dbPath);
+  const db = new Database(resolvedPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   migrateAssetDb(db);
+  return db;
+}
+
+export function openAssetDbReadOnly(dbPath: string = process.env.AWSOPS_ASSET_DB_PATH || DEFAULT_DB_PATH): AssetDb {
+  const resolvedPath = resolveAssetDbPath(dbPath);
+  if (!existsSync(resolvedPath)) {
+    throw new Error(`asset inventory database does not exist: ${resolvedPath}`);
+  }
+
+  const db = new Database(resolvedPath, { readonly: true, fileMustExist: true });
+  db.pragma('foreign_keys = ON');
   return db;
 }
 

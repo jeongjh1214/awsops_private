@@ -24,7 +24,7 @@ import type { DatasourceType } from '@/lib/app-config';
 import { queryDatasource } from '@/lib/datasource-client';
 import { detectDatasourceTypes, DATASOURCE_TYPES } from '@/lib/datasource-registry';
 import { DATASOURCE_QUERY_PROMPTS } from '@/lib/datasource-prompts';
-import { openAssetDb } from '@/lib/assets/asset-db';
+import { openAssetDbReadOnly } from '@/lib/assets/asset-db';
 import {
   buildAssetInventoryContext,
   detectAssetInventoryQuestion,
@@ -999,11 +999,12 @@ write action 제안은 가능하지만 수행하지 마세요.
 async function analyzeAssetInventory(
   messages: Array<{role: string; content: string}>,
   modelKey?: string,
+  accountId?: string,
 ): Promise<{ content: string; via: string; queriedResources: string[]; usedTools: string[] }> {
-  const db = openAssetDb();
+  const db = openAssetDbReadOnly(getConfig().assetInventory?.sqlitePath);
   try {
     const lastMessage = messages[messages.length - 1]?.content || '';
-    const context = buildAssetInventoryContext(db, lastMessage, { limit: 150 });
+    const context = buildAssetInventoryContext(db, lastMessage, { accountId, limit: 150 });
     const formattedContext = formatAssetInventoryContext(context);
     const bedrockMessages = messages.slice(-10).map((message: any) => ({
       role: message.role,
@@ -1560,7 +1561,7 @@ async function handleSingleRoute(
 
   // Cloud Asset Inventory handler / 저장된 자산 원장 핸들러
   if (config.handler === 'asset-inventory') {
-    return analyzeAssetInventory(messages, modelKey);
+    return analyzeAssetInventory(messages, modelKey, accountId);
   }
 
   // SQL handler / SQL 핸들러
