@@ -32,14 +32,10 @@ export default function S3Page() {
   const fetchData = useCallback(async (bustCache = false) => {
     setLoading(true);
     try {
-      const res = await fetch(bustCache ? '/awsops/api/steampipe?bustCache=true' : '/awsops/api/steampipe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accountId: currentAccountId,
-          queries: { summary: s3Q.summary, list: s3Q.list, publicBuckets: s3Q.publicBuckets },
-        }),
-      });
+      const params = new URLSearchParams();
+      if (bustCache) params.set('bustCache', 'true');
+      if (currentAccountId && currentAccountId !== '__all__') params.set('accountId', currentAccountId);
+      const res = await fetch(`/awsops/api/s3${params.toString() ? `?${params.toString()}` : ''}`);
       setData(await res.json());
     } catch {} finally { setLoading(false); }
   }, [currentAccountId]);
@@ -50,15 +46,15 @@ export default function S3Page() {
     setDetailLoading(true);
     setIamRoles([]);
     try {
-      const detailSql = s3Q.detail.replace('{name}', name);
       const iamSql = s3Q.s3IamRoles;
+      const bucket = list.find((row: any) => row.name === name);
+      if (bucket) setSelected(bucket);
       const res = await fetch('/awsops/api/steampipe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountId: currentAccountId, queries: { detail: detailSql, iam: iamSql } }),
+        body: JSON.stringify({ accountId: currentAccountId, queries: { iam: iamSql } }),
       });
       const result = await res.json();
-      if (result.detail?.rows?.[0]) setSelected(result.detail.rows[0]);
       setIamRoles(result.iam?.rows || []);
     } catch {} finally { setDetailLoading(false); }
   };

@@ -3,6 +3,7 @@ import { exportAssetsCsv, previewAssetCsvImport, applyAssetCsvImport } from '@/l
 import { openAssetDb } from '@/lib/assets/asset-db';
 import { listAssets, type AssetListFilters } from '@/lib/assets/asset-repository';
 import { parseAssetSyncResourceTypesInput, runAssetSync } from '@/lib/assets/asset-sync';
+import { listS3Buckets } from '@/lib/assets/s3-sdk-sync';
 import { getConfig } from '@/lib/app-config';
 import { runQuery } from '@/lib/steampipe';
 
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
       accountId: accountId.value,
       dependencies: {
         runQuery,
+        listS3Buckets,
         getAssetInventoryConfig: () => getConfig().assetInventory,
         openAssetDb,
       },
