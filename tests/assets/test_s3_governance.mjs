@@ -35,6 +35,7 @@ try {
   const {
     getS3GovernanceRecord,
     listS3GovernanceRecords,
+    seedS3GovernanceRecordsFromAssets,
     updateS3GovernanceRecord,
   } = require(join(outDir, 's3-governance.js'));
 
@@ -58,6 +59,14 @@ try {
     bucketName: 'deleted-customer-bucket',
     isActive: 0,
     lastSeenAt: missingAt,
+    now,
+  });
+  insertS3Asset(db, makeAssetId, stableJsonHash, {
+    accountId: '999999999999',
+    accountName: 'Other Account',
+    bucketName: 'other-account-bucket',
+    isActive: 1,
+    lastSeenAt: now,
     now,
   });
 
@@ -133,6 +142,36 @@ try {
   assert.equal(result.total, 1);
   assert.equal(result.rows[0].bucket_name, 'deleted-customer-bucket');
   assert.equal(result.rows[0].history, 'kept for audit after deletion');
+
+  insertS3Asset(db, makeAssetId, stableJsonHash, {
+    accountId: '123456789012',
+    accountName: 'Common Dev',
+    bucketName: 'new-auto-bucket',
+    isActive: 1,
+    lastSeenAt: secondUpdatedAt,
+    now,
+  });
+  const seedSummary = seedS3GovernanceRecordsFromAssets(db, {
+    accountId: '123456789012',
+    updatedBy: 'seed-test',
+  }, '2026-06-24T04:00:00.000Z');
+  assert.deepEqual(seedSummary, {
+    scanned: 3,
+    created: 1,
+    skipped: 2,
+  });
+  result = listS3GovernanceRecords(db, { accountId: '123456789012' });
+  assert.equal(result.total, 3);
+  const seededRecord = getS3GovernanceRecord(db, '123456789012:new-auto-bucket');
+  assert.ok(seededRecord);
+  assert.equal(seededRecord.account_name, 'Common Dev');
+  assert.equal(seededRecord.owner_team, '');
+  assert.equal(seededRecord.purpose, '');
+  assert.equal(seededRecord.contains_personal_info, null);
+  assert.equal(seededRecord.asset_is_active, 1);
+  assert.equal(seededRecord.events[0].event_type, 'governance_seeded');
+  assert.equal(getS3GovernanceRecord(db, '123456789012:customer-prod-bucket').account_name, 'Common Dev Alias');
+  assert.equal(listS3GovernanceRecords(db, { accountId: '999999999999' }).total, 0);
 
   const context = buildS3GovernanceContext(db, 'S3 관리대장에서 개인정보 포함 버킷 알려줘');
   assert.equal(context.filters.containsPersonalInfo, true);

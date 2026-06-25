@@ -11,6 +11,7 @@ import {
   Database,
   Download,
   History,
+  Import,
   Plus,
   RefreshCw,
   Save,
@@ -66,6 +67,12 @@ type S3GovernanceListResponse = {
   offset: number;
 };
 
+type S3GovernanceSeedSummary = {
+  scanned: number;
+  created: number;
+  skipped: number;
+};
+
 type GovernanceForm = {
   accountId: string;
   accountName: string;
@@ -103,8 +110,10 @@ export default function S3GovernancePage() {
   const [rows, setRows] = useState<S3GovernanceRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [seedSummary, setSeedSummary] = useState<S3GovernanceSeedSummary | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<S3GovernanceDetail | null>(null);
   const [form, setForm] = useState<GovernanceForm>(EMPTY_FORM);
@@ -233,6 +242,28 @@ export default function S3GovernancePage() {
     }
   };
 
+  const seedFromAssets = async () => {
+    setSeeding(true);
+    setError('');
+    setSeedSummary(null);
+    try {
+      const data = await fetchJson<{ ok: boolean; summary: S3GovernanceSeedSummary }>('/awsops/api/s3-governance?action=seed-from-assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: currentAccountId && currentAccountId !== '__all__' ? currentAccountId : undefined,
+          updatedBy: 'awsops-ui',
+        }),
+      });
+      setSeedSummary(data.summary);
+      await fetchRows();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '수집된 S3 버킷을 관리대장으로 불러오지 못했습니다.');
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   const exportCsv = () => {
     const params = new URLSearchParams({ action: 'export', limit: '1000' });
     if (currentAccountId && currentAccountId !== '__all__') params.set('accountId', currentAccountId);
@@ -264,6 +295,15 @@ export default function S3GovernancePage() {
           <div className="flex items-start gap-2 rounded-lg border border-accent-red/30 bg-accent-red/10 px-4 py-3 text-sm text-accent-red">
             <AlertCircle size={16} className="mt-0.5 shrink-0" />
             <span className="break-words">{error}</span>
+          </div>
+        )}
+
+        {seedSummary && (
+          <div className="rounded-lg border border-navy-600 bg-navy-800 px-4 py-3 text-sm text-gray-300">
+            <span className="font-medium text-white">수집 버킷 불러오기 결과</span>
+            <span className="ml-3">대상: {seedSummary.scanned}</span>
+            <span className="ml-3 text-accent-green">생성: {seedSummary.created}</span>
+            <span className="ml-3 text-gray-500">기존 유지: {seedSummary.skipped}</span>
           </div>
         )}
 
@@ -310,6 +350,10 @@ export default function S3GovernancePage() {
           <button onClick={exportCsv} className={secondaryButtonClassName}>
             <Download size={14} />
             <span className="truncate">CSV</span>
+          </button>
+          <button onClick={seedFromAssets} disabled={seeding} className={secondaryButtonClassName}>
+            <Import size={14} className={seeding ? 'animate-pulse' : ''} />
+            <span className="truncate">{seeding ? '불러오는 중' : '수집 버킷 불러오기'}</span>
           </button>
           <button onClick={openNew} className={primaryButtonClassName}>
             <Plus size={14} />

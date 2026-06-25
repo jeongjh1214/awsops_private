@@ -5,6 +5,7 @@ import {
   listS3GovernanceRecords,
   getS3GovernanceRecord,
   makeS3GovernanceStableKey,
+  seedS3GovernanceRecordsFromAssets,
   updateS3GovernanceRecord,
   type S3GovernanceFilters,
   type S3GovernanceRow,
@@ -58,6 +59,27 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const body = await readJsonBody(request);
+  const { searchParams } = new URL(request.url);
+  const action = optionalString(searchParams.get('action')) ?? optionalString(body.action);
+
+  if (action === 'seed-from-assets') {
+    const accountId = optionalString(body.accountId);
+    if (accountId && !/^\d{12}$/.test(accountId)) {
+      return NextResponse.json({ error: 'accountId must be a 12-digit AWS account ID' }, { status: 400 });
+    }
+
+    const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
+    try {
+      const summary = seedS3GovernanceRecordsFromAssets(db, {
+        accountId,
+        updatedBy: optionalString(body.updatedBy) ?? 'awsops-ui',
+      });
+      return NextResponse.json({ ok: true, summary });
+    } finally {
+      db.close();
+    }
+  }
+
   const input = parseS3GovernanceUpdateBody(body);
   if ('error' in input) {
     return NextResponse.json({ error: input.error }, { status: 400 });

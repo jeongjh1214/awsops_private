@@ -30,6 +30,17 @@ export interface S3GovernanceUpdateInput {
   updatedBy?: string;
 }
 
+export interface S3GovernanceSeedInput {
+  accountId?: string;
+  updatedBy?: string;
+}
+
+export interface S3GovernanceSeedSummary {
+  scanned: number;
+  created: number;
+  skipped: number;
+}
+
 export interface S3GovernanceListResult {
   rows: S3GovernanceRow[];
   total: number;
@@ -100,6 +111,12 @@ interface S3GovernanceSnapshot {
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 1000;
+
+interface S3AssetSeedRow {
+  account_id: string;
+  account_name: string;
+  bucket_name: string;
+}
 
 export function makeS3GovernanceStableKey(accountId: string, bucketName: string): string {
   return `${accountId.trim()}:${bucketName.trim()}`;
@@ -292,6 +309,130 @@ export function updateS3GovernanceRecord(
   })();
 
   return true;
+}
+
+export function seedS3GovernanceRecordsFromAssets(
+  db: AssetDb,
+  input: S3GovernanceSeedInput = {},
+  now: string = new Date().toISOString(),
+): S3GovernanceSeedSummary {
+  const accountId = input.accountId?.trim();
+  const params: Record<string, unknown> = {};
+  const accountCondition = accountId ? 'and account_id = @accountId' : '';
+  if (accountId) params.accountId = accountId;
+
+  const assets = db.prepare(`
+    select
+      account_id,
+      account_name,
+      resource_id as bucket_name
+    from asset_records
+    where service = 's3'
+      and resource_type = 's3_bucket'
+      ${accountCondition}
+    order by account_id asc, resource_id asc
+  `).all(params) as S3AssetSeedRow[];
+
+  let created = 0;
+  let skipped = 0;
+  const updatedBy = input.updatedBy?.trim() || 'asset-seed';
+
+  db.transaction(() => {
+    for (const asset of assets) {
+      const stableKey = makeS3GovernanceStableKey(asset.account_id, asset.bucket_name);
+      if (getStoredGovernanceRecord(db, stableKey)) {
+        skipped += 1;
+        continue;
+      }
+
+      const snapshot = defaultGovernanceSnapshot(stableKey, asset.account_id, asset.bucket_name, now);
+      snapshot.accountName = asset.account_name;
+      snapshot.updatedBy = updatedBy;
+
+      db.prepare(`
+        insert into s3_governance_records (
+          stable_key,
+          account_id,
+          account_name,
+          phase,
+          bucket_name,
+          owner_team,
+          purpose,
+          history,
+          contains_personal_info,
+          pii_retention_aware,
+          pii_retention_applied,
+          pii_retention_period,
+          remarks,
+          updated_by,
+          updated_at,
+          created_at
+        ) values (
+          @stableKey,
+          @accountId,
+          @accountName,
+          @phase,
+          @bucketName,
+          @ownerTeam,
+          @purpose,
+          @history,
+          @containsPersonalInfoSql,
+          @piiRetentionAwareSql,
+          @piiRetentionAppliedSql,
+          @piiRetentionPeriod,
+          @remarks,
+          @updatedBy,
+          @updatedAt,
+          @createdAt
+        )
+      `).run(snapshotToSqlParams(snapshot));
+
+      db.prepare(`
+        insert into s3_governance_events (
+          id,
+          stable_key,
+          account_id,
+          bucket_name,
+          event_type,
+          event_source,
+          summary,
+          before_json,
+          after_json,
+          created_by,
+          created_at
+        ) values (
+          @id,
+          @stableKey,
+          @accountId,
+          @bucketName,
+          'governance_seeded',
+          'sync',
+          @summary,
+          '{}',
+          @afterJson,
+          @createdBy,
+          @createdAt
+        )
+      `).run({
+        id: randomUUID(),
+        stableKey,
+        accountId: asset.account_id,
+        bucketName: asset.bucket_name,
+        summary: `Seeded S3 governance record from collected asset ${asset.bucket_name}`,
+        afterJson: JSON.stringify(snapshot),
+        createdBy: updatedBy,
+        createdAt: now,
+      });
+
+      created += 1;
+    }
+  })();
+
+  return {
+    scanned: assets.length,
+    created,
+    skipped,
+  };
 }
 
 function makeListWhereClause(filters: S3GovernanceFilters): {
