@@ -149,6 +149,12 @@ try {
   assert.match(listRouteSource, /Invalid boolean value for/);
   const detailRouteSource = readFileSync('src/app/api/s3-governance/[stableKey]/route.ts', 'utf8');
   assert.match(detailRouteSource, /Invalid boolean value for/);
+  const pageSource = readFileSync('src/app/s3-governance/page.tsx', 'utf8');
+  assert.match(
+    pageSource,
+    /selectedKey\s*===\s*'__new__'[\s\S]{0,120}return/,
+    'new S3 governance records should open the drawer without fetching /api/s3-governance/__new__',
+  );
 
   db.close();
 } finally {

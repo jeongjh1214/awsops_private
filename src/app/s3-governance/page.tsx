@@ -180,6 +180,10 @@ export default function S3GovernancePage() {
       setDetail(null);
       return;
     }
+    if (selectedKey === '__new__') {
+      setDetail(null);
+      return;
+    }
     fetchDetail(selectedKey);
   }, [fetchDetail, selectedKey]);
 
