@@ -122,8 +122,11 @@ export async function runIdentityAudit(
     }
     throw error;
   } finally {
-    db?.close();
-    running = false;
+    try {
+      db?.close();
+    } finally {
+      running = false;
+    }
   }
 }
 

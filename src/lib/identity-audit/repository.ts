@@ -515,7 +515,7 @@ function csvCell(value: unknown): string {
 }
 
 function guardCsvFormula(value: string): string {
-  return /^\s*[=+\-@]/.test(value) ? `'${value}` : value;
+  return /^[\s\x00-\x1F\x7F]*[=+\-@]/.test(value) ? `'${value}` : value;
 }
 
 function stableId(...parts: string[]): string {

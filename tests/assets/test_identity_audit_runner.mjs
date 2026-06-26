@@ -423,6 +423,21 @@ try {
       '2026-07-01T01:02:00.000Z'
     )
   `).run({ runId: csvInjectionRun.id, message: '\t=cmd, danger' });
+  db.prepare(`
+    insert into identity_audit_findings (
+      id, run_id, display_name, finding_type, severity, old_org_code,
+      old_org_name, new_org_code, new_org_name, assignment_count, message,
+      created_at
+    ) values (
+      'control-formula-finding', @runId, @displayName, 'ORG_CHANGED_WITH_AWS_ACCESS', 'medium',
+      @oldOrgCode, 'Old "Org", Inc', 'SAFE', 'Safe Org', 1, 'quoted "message", ok',
+      '2026-07-01T01:03:00.000Z'
+    )
+  `).run({
+    runId: csvInjectionRun.id,
+    displayName: '\x01=cmd',
+    oldOrgCode: '\x1b@cmd',
+  });
   const csv = exportIdentityAuditFindingsCsv(db, { runId: csvInjectionRun.id });
   assert.equal(
     csv.split('\n')[0],
@@ -433,6 +448,10 @@ try {
   assert.ok(csv.includes("\"' =Old Org, Inc\""));
   assert.ok(csv.includes("'@NEW"));
   assert.ok(csv.includes("\"'\t=cmd, danger\""));
+  assert.ok(csv.includes("'\x01=cmd"));
+  assert.ok(csv.includes("'\x1b@cmd"));
+  assert.ok(csv.includes('"Old ""Org"", Inc"'));
+  assert.ok(csv.includes('"quoted ""message"", ok"'));
 
   const runnerDbPath = join(outDir, 'runner.db');
   const runnerResult = await runIdentityAudit({
@@ -588,6 +607,41 @@ try {
   });
   assert.equal(openFailureRetryResult.status, 'completed');
   assert.equal(openAttempts, 2);
+
+  const closeThrowingDb = {
+    prepare() {
+      return {
+        run() {},
+      };
+    },
+    close() {
+      throw new Error('close failed once');
+    },
+  };
+  await assert.rejects(
+    () => runIdentityAudit({
+      openDb: () => closeThrowingDb,
+      now: (() => {
+        const values = [
+          '2026-07-02T04:00:00.000Z',
+          '2026-07-02T04:01:00.000Z',
+        ];
+        return () => values.shift() || '2026-07-02T04:02:00.000Z';
+      })(),
+      resolveConfig: () => {
+        throw new Error('config failed before close');
+      },
+    }),
+    /close failed once/,
+  );
+  await assert.rejects(
+    () => runIdentityAudit({
+      openDb: () => {
+        throw new Error('second open reached');
+      },
+    }),
+    /second open reached/,
+  );
 
   const failingDbPath = join(outDir, 'runner-failed.db');
   await assert.rejects(
