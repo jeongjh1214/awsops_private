@@ -13,6 +13,7 @@ try {
   execFileSync(tsc, [
     'src/lib/assets/asset-db.ts',
     'src/lib/identity-audit/types.ts',
+    'src/lib/identity-audit/org-api.ts',
     'src/lib/identity-audit/repository.ts',
     '--module', 'commonjs',
     '--target', 'es2020',
@@ -31,6 +32,116 @@ try {
     listIdentityAuditFindings,
     getLatestIdentityAuditRun,
   } = require(join(outDir, 'identity-audit/repository.js'));
+  const {
+    fetchOrganizationPositionsForUsers,
+    parseOrganizationPosition,
+  } = require(join(outDir, 'identity-audit/org-api.js'));
+
+  const rawBillyOrg = {
+    data: {
+      mainPosition: {
+        orgCode: 'ABC12345',
+        orgName: '클라우드파트',
+      },
+    },
+  };
+  assert.deepEqual(parseOrganizationPosition('billy.j', rawBillyOrg), {
+    displayName: 'billy.j',
+    orgCode: 'ABC12345',
+    orgName: '클라우드파트',
+    raw: rawBillyOrg,
+  });
+
+  const orgApiConfig = {
+    baseUrl: 'https://knock-api.kakaopay.com/papi/v1/krew',
+    apiKey: 'test-key',
+    concurrency: 1,
+    timeoutMs: 1000,
+    retryCount: 0,
+  };
+  const orgResponses = {
+    'billy.j': {
+      data: {
+        mainPosition: {
+          orgCode: 'ABC12345',
+          orgName: '클라우드파트',
+        },
+      },
+    },
+    'cloud.k': {
+      data: {
+        mainPosition: {
+          orgCode: 'XYZ98765',
+          orgName: '보안파트',
+        },
+      },
+    },
+  };
+  let activeRequests = 0;
+  let maxActiveRequests = 0;
+  const fakeFetcher = async (url, init) => {
+    assert.equal(init.headers['X-API-Key'], 'test-key');
+    activeRequests += 1;
+    maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    activeRequests -= 1;
+
+    const displayName = decodeURIComponent(new URL(url).pathname.split('/').at(-1));
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return orgResponses[displayName];
+      },
+    };
+  };
+  const fetchedOrgs = await fetchOrganizationPositionsForUsers(
+    ['billy.j', 'cloud.k'],
+    orgApiConfig,
+    fakeFetcher,
+  );
+  assert.equal(maxActiveRequests, 1);
+  assert.equal(fetchedOrgs.get('billy.j').orgCode, 'ABC12345');
+  assert.equal(fetchedOrgs.get('cloud.k').orgName, '보안파트');
+
+  let retryCallCount = 0;
+  const retryResult = await fetchOrganizationPositionsForUsers(
+    ['billy.j'],
+    { ...orgApiConfig, retryCount: 1 },
+    async () => {
+      retryCallCount += 1;
+      if (retryCallCount === 1) {
+        return {
+          ok: false,
+          status: 500,
+          async json() {
+            return { message: 'server error' };
+          },
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return rawBillyOrg;
+        },
+      };
+    },
+  );
+  assert.equal(retryCallCount, 2);
+  assert.equal(retryResult.get('billy.j').orgCode, 'ABC12345');
+
+  const failedResult = await fetchOrganizationPositionsForUsers(
+    ['billy.j'],
+    orgApiConfig,
+    async () => {
+      throw new Error('network unavailable');
+    },
+  );
+  assert.equal(failedResult.get('billy.j').orgCode, '');
+  assert.equal(failedResult.get('billy.j').orgName, '');
+  assert.ok(failedResult.get('billy.j').error.length > 0);
 
   const db = openAssetDb(dbPath);
   const firstRun = createIdentityAuditRun(db, '2026-06-20T01:00:00.000Z');
