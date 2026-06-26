@@ -51,10 +51,14 @@ export async function runIdentityAudit(
 
   running = true;
   const now = dependencies.now ?? (() => new Date().toISOString());
-  const db = (dependencies.openDb ?? defaultOpenDb)();
-  const run = createIdentityAuditRun(db, now());
+  let db: AssetDb | undefined;
+  let runId: string | undefined;
 
   try {
+    db = (dependencies.openDb ?? defaultOpenDb)();
+    const run = createIdentityAuditRun(db, now());
+    runId = run.id;
+
     const config = (dependencies.resolveConfig ?? resolveIdentityAuditConfig)();
     if (!config.enabled) {
       throw new Error('identity audit is disabled');
@@ -89,7 +93,7 @@ export async function runIdentityAudit(
     });
     const collectedAt = now();
     const summary = persistIdentityAuditSnapshot(db, {
-      runId: run.id,
+      runId,
       collectedAt,
       users: identityState.users.map((user) => {
         const position = positions.get(user.displayName);
@@ -106,17 +110,19 @@ export async function runIdentityAudit(
       assignments: identityState.assignments,
     });
 
-    completeIdentityAuditRun(db, run.id, 'completed', now());
+    completeIdentityAuditRun(db, runId, 'completed', now());
     return {
-      runId: run.id,
+      runId,
       status: 'completed',
       summary,
     };
   } catch (error) {
-    completeIdentityAuditRun(db, run.id, 'failed', now(), toErrorMessage(error));
+    if (db && runId) {
+      completeIdentityAuditRun(db, runId, 'failed', now(), toErrorMessage(error));
+    }
     throw error;
   } finally {
-    db.close();
+    db?.close();
     running = false;
   }
 }

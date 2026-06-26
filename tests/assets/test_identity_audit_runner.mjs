@@ -419,10 +419,10 @@ try {
       created_at
     ) values (
       'formula-finding', @runId, '=cmd', 'ORG_CHANGED_WITH_AWS_ACCESS', 'high',
-      '+OLD', '-Old Org', '@NEW', '=New Org', 4, '+message',
+      '+OLD', ' =Old Org, Inc', '@NEW', '=New Org', 4, @message,
       '2026-07-01T01:02:00.000Z'
     )
-  `).run({ runId: csvInjectionRun.id });
+  `).run({ runId: csvInjectionRun.id, message: '\t=cmd, danger' });
   const csv = exportIdentityAuditFindingsCsv(db, { runId: csvInjectionRun.id });
   assert.equal(
     csv.split('\n')[0],
@@ -430,8 +430,9 @@ try {
   );
   assert.ok(csv.includes("'=cmd"));
   assert.ok(csv.includes("'+OLD"));
-  assert.ok(csv.includes("'-Old Org"));
+  assert.ok(csv.includes("\"' =Old Org, Inc\""));
   assert.ok(csv.includes("'@NEW"));
+  assert.ok(csv.includes("\"'\t=cmd, danger\""));
 
   const runnerDbPath = join(outDir, 'runner.db');
   const runnerResult = await runIdentityAudit({
@@ -517,6 +518,76 @@ try {
   assert.equal(runnerDb.prepare('select status from identity_audit_runs where id = ?').get(runnerResult.runId).status, 'completed');
   assert.equal(runnerDb.prepare('select count(*) as count from identity_users').get().count, 1);
   runnerDb.close();
+
+  const openFailureDbPath = join(outDir, 'runner-open-failure.db');
+  let openAttempts = 0;
+  await assert.rejects(
+    () => runIdentityAudit({
+      openDb: () => {
+        openAttempts += 1;
+        if (openAttempts === 1) {
+          throw new Error('open failed once');
+        }
+        return openAssetDb(openFailureDbPath);
+      },
+      now: (() => {
+        const values = [
+          '2026-07-02T02:00:00.000Z',
+          '2026-07-02T02:01:00.000Z',
+          '2026-07-02T02:02:00.000Z',
+        ];
+        return () => values.shift() || '2026-07-02T02:03:00.000Z';
+      })(),
+      resolveConfig: () => {
+        throw new Error('config must not resolve after open failure');
+      },
+    }),
+    /open failed once/,
+  );
+  const openFailureRetryResult = await runIdentityAudit({
+    openDb: () => {
+      openAttempts += 1;
+      return openAssetDb(openFailureDbPath);
+    },
+    now: (() => {
+      const values = [
+        '2026-07-02T03:00:00.000Z',
+        '2026-07-02T03:01:00.000Z',
+        '2026-07-02T03:02:00.000Z',
+      ];
+      return () => values.shift() || '2026-07-02T03:03:00.000Z';
+    })(),
+    resolveConfig: () => ({
+      enabled: true,
+      profile: 'identity-audit-profile',
+      region: 'ap-northeast-2',
+      endpointUrls: {},
+      organizationApi: {
+        baseUrl: 'https://knock-api.kakaopay.com/papi/v1/krew',
+        apiKeyEnv: 'KREW_API_KEY',
+        lookupField: 'displayName',
+        concurrency: 1,
+        timeoutMs: 1000,
+        retryCount: 0,
+      },
+      schedule: {
+        dayOfWeek: 2,
+        hourKst: 10,
+        timezone: 'Asia/Seoul',
+      },
+    }),
+    getOrganizationApiKey: () => 'test-key',
+    collectIdentityCenterState: async () => ({
+      users: [],
+      assignments: [],
+    }),
+    fetchOrganizationPositionsForUsers: async (displayNames) => {
+      assert.deepEqual(displayNames, []);
+      return new Map();
+    },
+  });
+  assert.equal(openFailureRetryResult.status, 'completed');
+  assert.equal(openAttempts, 2);
 
   const failingDbPath = join(outDir, 'runner-failed.db');
   await assert.rejects(
