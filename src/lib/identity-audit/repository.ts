@@ -221,8 +221,9 @@ export function persistIdentityAuditSnapshot(
         collectedAt: input.collectedAt,
       });
 
-      const changed = Boolean(previous?.current_org_code)
-        && previous.current_org_code !== user.orgCode
+      const previousOrgCode = previous?.current_org_code || '';
+      const changed = Boolean(previousOrgCode)
+        && previousOrgCode !== user.orgCode
         && user.orgCode !== '';
 
       userUpsert.run({
