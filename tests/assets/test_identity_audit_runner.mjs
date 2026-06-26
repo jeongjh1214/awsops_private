@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
@@ -8,12 +8,14 @@ import { createRequire } from 'node:module';
 const outDir = mkdtempSync(join(tmpdir(), 'awsops-identity-runner-'));
 const dbPath = join(outDir, 'assets.db');
 const tsc = resolve('node_modules/.bin/tsc');
+symlinkSync(resolve('node_modules'), join(outDir, 'node_modules'), 'dir');
 
 try {
   execFileSync(tsc, [
     'src/lib/assets/asset-db.ts',
     'src/lib/identity-audit/types.ts',
     'src/lib/identity-audit/org-api.ts',
+    'src/lib/identity-audit/aws-collector.ts',
     'src/lib/identity-audit/repository.ts',
     '--module', 'commonjs',
     '--target', 'es2020',
@@ -36,6 +38,9 @@ try {
     fetchOrganizationPositionsForUsers,
     parseOrganizationPosition,
   } = require(join(outDir, 'identity-audit/org-api.js'));
+  const {
+    expandIdentityCenterAssignments,
+  } = require(join(outDir, 'identity-audit/aws-collector.js'));
 
   const rawBillyOrg = {
     data: {
@@ -142,6 +147,91 @@ try {
   assert.equal(failedResult.get('billy.j').orgCode, '');
   assert.equal(failedResult.get('billy.j').orgName, '');
   assert.ok(failedResult.get('billy.j').error.length > 0);
+
+  const groupExpansion = expandIdentityCenterAssignments({
+    users: [
+      {
+        displayName: 'billy.j',
+        identityStoreUserId: 'user-1',
+        userName: 'billy.j',
+        email: 'billy.j@example.com',
+      },
+      {
+        displayName: 'cloud.k',
+        identityStoreUserId: 'user-2',
+        userName: 'cloud.k',
+        email: 'cloud.k@example.com',
+      },
+    ],
+    groupsById: new Map([
+      ['group-1', { groupId: 'group-1', displayName: 'aws-admins' }],
+    ]),
+    groupMembersByGroupId: new Map([
+      ['group-1', ['user-1', 'user-2']],
+    ]),
+    permissionSetsByArn: new Map([
+      ['arn:aws:sso:::permissionSet/ssoins-1/ps-1', 'AdminAccess'],
+    ]),
+    accountAssignments: [{
+      PrincipalType: 'GROUP',
+      PrincipalId: 'group-1',
+      AccountId: '123456789012',
+      PermissionSetArn: 'arn:aws:sso:::permissionSet/ssoins-1/ps-1',
+    }],
+  });
+  assert.equal(groupExpansion.length, 2);
+  assert.deepEqual(groupExpansion.map((assignment) => assignment.displayName), ['billy.j', 'cloud.k']);
+  assert.ok(groupExpansion.every((assignment) => assignment.assignmentType === 'GROUP'));
+  assert.ok(groupExpansion.every((assignment) => assignment.groupName === 'aws-admins'));
+
+  const userExpansion = expandIdentityCenterAssignments({
+    users: groupExpansion.map((assignment) => ({
+      displayName: assignment.displayName,
+      identityStoreUserId: assignment.identityStoreUserId,
+      userName: assignment.displayName,
+      email: `${assignment.displayName}@example.com`,
+    })),
+    groupsById: new Map(),
+    groupMembersByGroupId: new Map(),
+    permissionSetsByArn: new Map([
+      ['arn:aws:sso:::permissionSet/ssoins-1/ps-1', 'AdminAccess'],
+    ]),
+    accountAssignments: [{
+      PrincipalType: 'USER',
+      PrincipalId: 'user-1',
+      AccountId: '123456789012',
+      PermissionSetArn: 'arn:aws:sso:::permissionSet/ssoins-1/ps-1',
+    }],
+  });
+  assert.equal(userExpansion.length, 1);
+  assert.equal(userExpansion[0].displayName, 'billy.j');
+  assert.equal(userExpansion[0].assignmentType, 'USER');
+  assert.equal(userExpansion[0].groupId, '');
+  assert.equal(userExpansion[0].groupName, '');
+
+  const unknownExpansion = expandIdentityCenterAssignments({
+    users: [],
+    groupsById: new Map(),
+    groupMembersByGroupId: new Map([
+      ['missing-group', ['missing-user']],
+    ]),
+    permissionSetsByArn: new Map(),
+    accountAssignments: [
+      {
+        PrincipalType: 'USER',
+        PrincipalId: 'missing-user',
+        AccountId: '123456789012',
+        PermissionSetArn: 'arn:aws:sso:::permissionSet/ssoins-1/ps-1',
+      },
+      {
+        PrincipalType: 'GROUP',
+        PrincipalId: 'missing-group',
+        AccountId: '123456789012',
+        PermissionSetArn: 'arn:aws:sso:::permissionSet/ssoins-1/ps-1',
+      },
+    ],
+  });
+  assert.deepEqual(unknownExpansion, []);
 
   const db = openAssetDb(dbPath);
   const firstRun = createIdentityAuditRun(db, '2026-06-20T01:00:00.000Z');
