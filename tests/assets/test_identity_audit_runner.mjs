@@ -14,9 +14,11 @@ try {
   execFileSync(tsc, [
     'src/lib/assets/asset-db.ts',
     'src/lib/identity-audit/types.ts',
+    'src/lib/identity-audit/config.ts',
     'src/lib/identity-audit/org-api.ts',
     'src/lib/identity-audit/aws-collector.ts',
     'src/lib/identity-audit/repository.ts',
+    'src/lib/identity-audit/audit-runner.ts',
     '--module', 'commonjs',
     '--target', 'es2020',
     '--esModuleInterop',
@@ -32,8 +34,13 @@ try {
     completeIdentityAuditRun,
     persistIdentityAuditSnapshot,
     listIdentityAuditFindings,
+    listIdentityAuditRuns,
     getLatestIdentityAuditRun,
+    exportIdentityAuditFindingsCsv,
   } = require(join(outDir, 'identity-audit/repository.js'));
+  const {
+    runIdentityAudit,
+  } = require(join(outDir, 'identity-audit/audit-runner.js'));
   const {
     fetchOrganizationPositionsForUsers,
     parseOrganizationPosition,
@@ -398,6 +405,161 @@ try {
   `).run();
 
   assert.equal(getLatestIdentityAuditRun(db).id, 'identity-audit-tie-a');
+  assert.deepEqual(
+    listIdentityAuditRuns(db, { limit: 2 }).map((run) => run.id),
+    ['identity-audit-tie-a', 'identity-audit-tie-z'],
+  );
+  assert.equal(listIdentityAuditRuns(db, { limit: 1 }).length, 1);
+
+  const csvInjectionRun = createIdentityAuditRun(db, '2026-07-01T01:00:00.000Z');
+  db.prepare(`
+    insert into identity_audit_findings (
+      id, run_id, display_name, finding_type, severity, old_org_code,
+      old_org_name, new_org_code, new_org_name, assignment_count, message,
+      created_at
+    ) values (
+      'formula-finding', @runId, '=cmd', 'ORG_CHANGED_WITH_AWS_ACCESS', 'high',
+      '+OLD', '-Old Org', '@NEW', '=New Org', 4, '+message',
+      '2026-07-01T01:02:00.000Z'
+    )
+  `).run({ runId: csvInjectionRun.id });
+  const csv = exportIdentityAuditFindingsCsv(db, { runId: csvInjectionRun.id });
+  assert.equal(
+    csv.split('\n')[0],
+    'display_name,old_org_code,old_org_name,new_org_code,new_org_name,assignment_count,severity,message,created_at',
+  );
+  assert.ok(csv.includes("'=cmd"));
+  assert.ok(csv.includes("'+OLD"));
+  assert.ok(csv.includes("'-Old Org"));
+  assert.ok(csv.includes("'@NEW"));
+
+  const runnerDbPath = join(outDir, 'runner.db');
+  const runnerResult = await runIdentityAudit({
+    openDb: () => openAssetDb(runnerDbPath),
+    now: (() => {
+      const values = [
+        '2026-07-02T01:00:00.000Z',
+        '2026-07-02T01:01:00.000Z',
+        '2026-07-02T01:02:00.000Z',
+      ];
+      return () => values.shift() || '2026-07-02T01:03:00.000Z';
+    })(),
+    resolveConfig: () => ({
+      enabled: true,
+      profile: 'identity-audit-profile',
+      region: 'ap-northeast-2',
+      endpointUrls: {},
+      organizationApi: {
+        baseUrl: 'https://knock-api.kakaopay.com/papi/v1/krew',
+        apiKeyEnv: 'KREW_API_KEY',
+        lookupField: 'displayName',
+        concurrency: 1,
+        timeoutMs: 1000,
+        retryCount: 0,
+      },
+      schedule: {
+        dayOfWeek: 2,
+        hourKst: 10,
+        timezone: 'Asia/Seoul',
+      },
+    }),
+    getOrganizationApiKey: () => 'test-key',
+    collectIdentityCenterState: async (config) => {
+      assert.deepEqual(config, {
+        profile: 'identity-audit-profile',
+        region: 'ap-northeast-2',
+        endpointUrls: {},
+      });
+      return {
+        users: [{
+          displayName: 'runner.j',
+          identityStoreUserId: 'runner-user-1',
+          userName: 'runner.j',
+          email: 'runner.j@example.com',
+        }],
+        assignments: [{
+          displayName: 'runner.j',
+          identityStoreUserId: 'runner-user-1',
+          accountId: '123456789012',
+          accountName: 'common-dev',
+          permissionSetArn: 'arn:aws:sso:::permissionSet/ssoins-1/ps-1',
+          permissionSetName: 'AdminAccess',
+          assignmentType: 'USER',
+          groupId: '',
+          groupName: '',
+        }],
+      };
+    },
+    fetchOrganizationPositionsForUsers: async (displayNames, config) => {
+      assert.deepEqual(displayNames, ['runner.j']);
+      assert.deepEqual(config, {
+        baseUrl: 'https://knock-api.kakaopay.com/papi/v1/krew',
+        apiKey: 'test-key',
+        concurrency: 1,
+        timeoutMs: 1000,
+        retryCount: 0,
+      });
+      return new Map([[
+        'runner.j',
+        {
+          displayName: 'runner.j',
+          orgCode: 'ABC12345',
+          orgName: '클라우드파트',
+          raw: { data: { mainPosition: { orgCode: 'ABC12345', orgName: '클라우드파트' } } },
+        },
+      ]]);
+    },
+  });
+  assert.equal(runnerResult.status, 'completed');
+  assert.equal(runnerResult.summary.totalUsers, 1);
+  assert.equal(runnerResult.summary.orgResolvedUsers, 1);
+  const runnerDb = openAssetDb(runnerDbPath);
+  assert.equal(runnerDb.prepare('select status from identity_audit_runs where id = ?').get(runnerResult.runId).status, 'completed');
+  assert.equal(runnerDb.prepare('select count(*) as count from identity_users').get().count, 1);
+  runnerDb.close();
+
+  const failingDbPath = join(outDir, 'runner-failed.db');
+  await assert.rejects(
+    () => runIdentityAudit({
+      openDb: () => openAssetDb(failingDbPath),
+      now: (() => {
+        const values = [
+          '2026-07-03T01:00:00.000Z',
+          '2026-07-03T01:02:00.000Z',
+        ];
+        return () => values.shift() || '2026-07-03T01:03:00.000Z';
+      })(),
+      resolveConfig: () => ({
+        enabled: true,
+        profile: 'identity-audit-profile',
+        region: 'ap-northeast-2',
+        endpointUrls: {},
+        organizationApi: {
+          baseUrl: 'https://knock-api.kakaopay.com/papi/v1/krew',
+          apiKeyEnv: 'KREW_API_KEY',
+          lookupField: 'displayName',
+          concurrency: 1,
+          timeoutMs: 1000,
+          retryCount: 0,
+        },
+        schedule: {
+          dayOfWeek: 2,
+          hourKst: 10,
+          timezone: 'Asia/Seoul',
+        },
+      }),
+      getOrganizationApiKey: () => '',
+      collectIdentityCenterState: async () => {
+        throw new Error('collector must not run without API key');
+      },
+    }),
+    /KREW_API_KEY/,
+  );
+  const failingDb = openAssetDb(failingDbPath);
+  const failedRun = getLatestIdentityAuditRun(failingDb);
+  assert.equal(failedRun.status, 'failed');
+  assert.match(failedRun.error_message, /KREW_API_KEY/);
+  failingDb.close();
 
   db.close();
 } finally {

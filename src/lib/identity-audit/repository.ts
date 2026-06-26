@@ -35,6 +35,10 @@ export interface IdentityAuditFindingListResult {
   offset: number;
 }
 
+export interface IdentityAuditRunListFilters {
+  limit?: number;
+}
+
 export interface IdentityAuditFindingRow {
   id: string;
   run_id: string;
@@ -307,6 +311,19 @@ export function getLatestIdentityAuditRun(db: AssetDb): IdentityAuditRunRow | un
   `).get() as IdentityAuditRunRow | undefined;
 }
 
+export function listIdentityAuditRuns(
+  db: AssetDb,
+  filters: IdentityAuditRunListFilters = {},
+): IdentityAuditRunRow[] {
+  const limit = normalizeLimit(filters.limit);
+  return db.prepare(`
+    select *
+    from identity_audit_runs
+    order by started_at desc, rowid desc
+    limit @limit
+  `).all({ limit }) as IdentityAuditRunRow[];
+}
+
 export function listIdentityAuditFindings(
   db: AssetDb,
   filters: IdentityAuditFindingFilters = {},
@@ -334,6 +351,57 @@ export function listIdentityAuditFindings(
     limit,
     offset,
   };
+}
+
+export function exportIdentityAuditFindingsCsv(
+  db: AssetDb,
+  filters: Pick<IdentityAuditFindingFilters, 'runId'> = {},
+): string {
+  const query = makeFindingWhereClause(filters);
+  const rows = db.prepare(`
+    select
+      display_name,
+      old_org_code,
+      old_org_name,
+      new_org_code,
+      new_org_name,
+      assignment_count,
+      severity,
+      message,
+      created_at
+    from identity_audit_findings
+    ${query.whereSql}
+    order by created_at desc, id asc
+  `).all(query.params) as Array<Pick<
+    IdentityAuditFindingRow,
+    | 'display_name'
+    | 'old_org_code'
+    | 'old_org_name'
+    | 'new_org_code'
+    | 'new_org_name'
+    | 'assignment_count'
+    | 'severity'
+    | 'message'
+    | 'created_at'
+  >>;
+
+  const headers = [
+    'display_name',
+    'old_org_code',
+    'old_org_name',
+    'new_org_code',
+    'new_org_name',
+    'assignment_count',
+    'severity',
+    'message',
+    'created_at',
+  ];
+  const lines = [
+    headers.join(','),
+    ...rows.map((row) => headers.map((header) => csvCell(row[header as keyof typeof row])).join(',')),
+  ];
+
+  return `${lines.join('\n')}\n`;
 }
 
 function loadPreviousOrgBaselines(db: AssetDb, runId: string): Map<string, PreviousIdentityUserRow> {
@@ -438,6 +506,16 @@ function normalizeLimit(limit: number | undefined): number {
 function normalizeOffset(offset: number | undefined): number {
   if (offset === undefined) return 0;
   return Math.max(Math.trunc(offset), 0);
+}
+
+function csvCell(value: unknown): string {
+  const text = guardCsvFormula(value === null || value === undefined ? '' : String(value));
+  if (!/[",\n\r]/.test(text)) return text;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function guardCsvFormula(value: string): string {
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
 }
 
 function stableId(...parts: string[]): string {
