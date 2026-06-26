@@ -7,13 +7,18 @@
       "endpointMode": "explicit",
       "bedrockProfile": "bedrock-local-profile",
       "awsProfile": "awsops-local-profile",
+      "identityCenterProfile": "identity-center-local-profile",
       "endpointUrls": {
         "bedrock-runtime": "https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com",
-        "sts": "https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com",
-        "s3": "https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com"
+        "identitystore": "https://vpce-xxxxxxxx.identitystore.ap-northeast-2.vpce.amazonaws.com",
+        "s3": "https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com",
+        "sso-admin": "https://vpce-xxxxxxxx.sso.ap-northeast-2.vpce.amazonaws.com",
+        "sts": "https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com"
       },
       "requiredEndpoints": [
         "bedrock-runtime",
+        "identitystore",
+        "sso-admin",
         "sts",
         "s3"
       ]
@@ -23,13 +28,18 @@
       "endpointMode": "explicit",
       "bedrockProfile": "bedrock-dev-profile",
       "awsProfile": "awsops-dev-profile",
+      "identityCenterProfile": "identity-center-dev-profile",
       "endpointUrls": {
         "bedrock-runtime": "https://vpce-xxxxxxxx.bedrock-runtime.ap-northeast-2.vpce.amazonaws.com",
-        "sts": "https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com",
-        "s3": "https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com"
+        "identitystore": "https://vpce-xxxxxxxx.identitystore.ap-northeast-2.vpce.amazonaws.com",
+        "s3": "https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com",
+        "sso-admin": "https://vpce-xxxxxxxx.sso.ap-northeast-2.vpce.amazonaws.com",
+        "sts": "https://vpce-xxxxxxxx.sts.ap-northeast-2.vpce.amazonaws.com"
       },
       "requiredEndpoints": [
         "bedrock-runtime",
+        "identitystore",
+        "sso-admin",
         "sts",
         "s3"
       ]
@@ -39,6 +49,7 @@
       "endpointMode": "hybrid",
       "bedrockProfile": "bedrock-prod-profile",
       "awsProfile": "awsops-prod-profile",
+      "identityCenterProfile": "identity-center-prod-profile",
       "endpointUrls": {},
       "requiredEndpoints": [
         "bedrock-runtime",
@@ -57,6 +68,24 @@
     "toolTimeoutMs": 30000,
     "queryCacheTtlSec": 300,
     "maxToolResultBytes": 200000
+  },
+  "identityAudit": {
+    "enabled": false,
+    "region": "ap-northeast-2",
+    "awsProfile": "identity-audit-profile",
+    "schedule": {
+      "dayOfWeek": 2,
+      "hourKst": 10,
+      "timezone": "Asia/Seoul"
+    },
+    "organizationApi": {
+      "baseUrl": "https://knock-api.kakaopay.com/papi/v1/krew",
+      "apiKeyEnv": "KREW_API_KEY",
+      "lookupField": "displayName",
+      "concurrency": 10,
+      "timeoutMs": 5000,
+      "retryCount": 2
+    }
   },
   "assetInventory": {
     "enabled": true,

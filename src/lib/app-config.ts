@@ -39,6 +39,7 @@ export interface PrivateEnvironmentConfig {
   endpointUrls?: Record<string, string>;
   requiredEndpoints?: string[];
   awsProfile?: string;
+  identityCenterProfile?: string;
 }
 
 export interface PrivateAgentConfig {
@@ -71,6 +72,47 @@ export const DEFAULT_ASSET_INVENTORY_CONFIG: AssetInventoryConfig = {
   adminTokenHash: '',
   supportedResourceTypes: ['ec2_instance', 's3_bucket'],
 };
+
+export interface IdentityAuditOrganizationApiConfig {
+  baseUrl?: string;
+  apiKeyEnv?: string;
+  lookupField?: string;
+  concurrency?: number;
+  timeoutMs?: number;
+  retryCount?: number;
+}
+
+export interface IdentityAuditScheduleConfig {
+  dayOfWeek?: number;
+  hourKst?: number;
+  timezone?: string;
+}
+
+export interface IdentityAuditConfig {
+  enabled?: boolean;
+  region?: string;
+  awsProfile?: string;
+  schedule?: IdentityAuditScheduleConfig;
+  organizationApi?: IdentityAuditOrganizationApiConfig;
+}
+
+export const DEFAULT_IDENTITY_AUDIT_CONFIG = {
+  enabled: false,
+  region: 'ap-northeast-2',
+  schedule: {
+    dayOfWeek: 2,
+    hourKst: 10,
+    timezone: 'Asia/Seoul',
+  },
+  organizationApi: {
+    baseUrl: 'https://knock-api.kakaopay.com/papi/v1/krew',
+    apiKeyEnv: 'KREW_API_KEY',
+    lookupField: 'displayName',
+    concurrency: 10,
+    timeoutMs: 5000,
+    retryCount: 2,
+  },
+} satisfies IdentityAuditConfig;
 
 // External datasource types (Grafana-style) / 외부 데이터소스 타입 (Grafana 스타일)
 export type DatasourceType = 'prometheus' | 'loki' | 'tempo' | 'clickhouse' | 'jaeger' | 'dynatrace' | 'datadog';
@@ -127,6 +169,7 @@ export interface AppConfig {
   notificationEmails?: string[];      // Mailing list for report/benchmark notifications / 리포트/벤치마크 알림 메일링 리스트
   notificationEnabled?: boolean;      // Enable auto-notification on report completion / 리포트 완료 시 자동 알림 활성화
   assetInventory?: AssetInventoryConfig;
+  identityAudit?: IdentityAuditConfig;
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -167,6 +210,7 @@ const DEFAULT_CONFIG: AppConfig = {
     maxToolResultBytes: 200000,
   },
   assetInventory: DEFAULT_ASSET_INVENTORY_CONFIG,
+  identityAudit: DEFAULT_IDENTITY_AUDIT_CONFIG,
 };
 
 // 캐시된 config (60초 TTL) / Cached config with 60s TTL
