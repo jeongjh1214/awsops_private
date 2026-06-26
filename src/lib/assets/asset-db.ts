@@ -165,6 +165,84 @@ export function migrateAssetDb(db: AssetDb): void {
       created_at text not null,
       foreign key(stable_key) references s3_governance_records(stable_key) on delete cascade
     );
+
+    create table if not exists identity_audit_runs (
+      id text primary key,
+      status text not null,
+      started_at text not null,
+      finished_at text,
+      total_users integer not null default 0,
+      org_resolved_users integer not null default 0,
+      changed_users integer not null default 0,
+      risky_users integer not null default 0,
+      error_count integer not null default 0,
+      error_message text not null default ''
+    );
+
+    create table if not exists identity_users (
+      display_name text primary key,
+      identity_store_user_id text not null default '',
+      user_name text not null default '',
+      email text not null default '',
+      current_org_code text not null default '',
+      current_org_name text not null default '',
+      current_assignment_count integer not null default 0,
+      is_active integer not null default 1,
+      first_seen_at text not null,
+      last_seen_at text not null,
+      updated_at text not null
+    );
+
+    create table if not exists identity_org_snapshots (
+      id text primary key,
+      run_id text not null references identity_audit_runs(id) on delete cascade,
+      display_name text not null,
+      org_code text not null default '',
+      org_name text not null default '',
+      raw_json text not null default '{}',
+      collected_at text not null
+    );
+
+    create table if not exists identity_org_change_events (
+      id text primary key,
+      run_id text not null references identity_audit_runs(id) on delete cascade,
+      display_name text not null,
+      old_org_code text not null default '',
+      old_org_name text not null default '',
+      new_org_code text not null default '',
+      new_org_name text not null default '',
+      detected_at text not null
+    );
+
+    create table if not exists identity_aws_assignments (
+      id text primary key,
+      run_id text not null references identity_audit_runs(id) on delete cascade,
+      display_name text not null,
+      identity_store_user_id text not null default '',
+      account_id text not null,
+      account_name text not null default '',
+      permission_set_arn text not null,
+      permission_set_name text not null default '',
+      assignment_type text not null,
+      group_id text not null default '',
+      group_name text not null default '',
+      collected_at text not null
+    );
+
+    create table if not exists identity_audit_findings (
+      id text primary key,
+      run_id text not null references identity_audit_runs(id) on delete cascade,
+      display_name text not null,
+      finding_type text not null,
+      severity text not null,
+      old_org_code text not null default '',
+      old_org_name text not null default '',
+      new_org_code text not null default '',
+      new_org_name text not null default '',
+      assignment_count integer not null default 0,
+      message text not null,
+      created_at text not null
+    );
   `);
 
   ensureAssetChangeEventsForeignKey(db);
@@ -176,6 +254,11 @@ export function migrateAssetDb(db: AssetDb): void {
     create index if not exists idx_s3_governance_records_account on s3_governance_records(account_id, bucket_name);
     create index if not exists idx_s3_governance_records_phase_owner on s3_governance_records(phase, owner_team);
     create index if not exists idx_s3_governance_events_record on s3_governance_events(stable_key, created_at);
+    create index if not exists idx_identity_users_org on identity_users(current_org_code, is_active);
+    create index if not exists idx_identity_snapshots_run on identity_org_snapshots(run_id, display_name);
+    create index if not exists idx_identity_changes_run on identity_org_change_events(run_id, display_name);
+    create index if not exists idx_identity_assignments_run_user on identity_aws_assignments(run_id, display_name);
+    create index if not exists idx_identity_findings_run on identity_audit_findings(run_id, severity);
   `);
 }
 
