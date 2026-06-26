@@ -61,7 +61,7 @@ try {
   completeIdentityAuditRun(db, firstRun.id, 'completed', '2026-06-20T01:02:00.000Z');
 
   const secondRun = createIdentityAuditRun(db, '2026-06-27T01:00:00.000Z');
-  const summary = persistIdentityAuditSnapshot(db, {
+  const secondSnapshot = {
     runId: secondRun.id,
     collectedAt: '2026-06-27T01:01:00.000Z',
     users: [{
@@ -84,7 +84,8 @@ try {
       groupId: '',
       groupName: '',
     }],
-  });
+  };
+  const summary = persistIdentityAuditSnapshot(db, secondSnapshot);
   completeIdentityAuditRun(db, secondRun.id, 'completed', '2026-06-27T01:02:00.000Z');
 
   assert.equal(summary.changedUsers, 1);
@@ -97,6 +98,27 @@ try {
   assert.equal(findings.rows[0].new_org_code, 'XYZ98765');
   assert.equal(findings.rows[0].assignment_count, 1);
   assert.equal(getLatestIdentityAuditRun(db).id, secondRun.id);
+
+  const retrySummary = persistIdentityAuditSnapshot(db, secondSnapshot);
+  assert.equal(retrySummary.changedUsers, 1);
+  assert.equal(retrySummary.riskyUsers, 1);
+  assert.equal(listIdentityAuditFindings(db, { runId: secondRun.id }).rows.length, 1);
+  assert.equal(
+    db.prepare('select count(*) as count from identity_org_change_events where run_id = ?').get(secondRun.id).count,
+    1,
+  );
+  assert.equal(
+    db.prepare('select count(*) as count from identity_aws_assignments where run_id = ?').get(secondRun.id).count,
+    1,
+  );
+  assert.deepEqual(
+    db.prepare(`
+      select changed_users, risky_users
+      from identity_audit_runs
+      where id = ?
+    `).get(secondRun.id),
+    { changed_users: 1, risky_users: 1 },
+  );
 
   const thirdRun = createIdentityAuditRun(db, '2026-06-28T01:00:00.000Z');
   const thirdSummary = persistIdentityAuditSnapshot(db, {
@@ -118,6 +140,63 @@ try {
   assert.equal(thirdSummary.changedUsers, 1);
   assert.equal(thirdSummary.riskyUsers, 0);
   assert.equal(listIdentityAuditFindings(db, { runId: thirdRun.id }).rows.length, 0);
+
+  const fourthRun = createIdentityAuditRun(db, '2026-06-29T01:00:00.000Z');
+  const duplicateAssignment = {
+    displayName: 'billy.j',
+    identityStoreUserId: 'user-1',
+    accountId: '123456789012',
+    accountName: 'common-dev',
+    permissionSetArn: 'arn:aws:sso:::permissionSet/ssoins-1/ps-1',
+    permissionSetName: 'AdminAccess',
+    assignmentType: 'USER',
+    groupId: '',
+    groupName: '',
+  };
+  const fourthSummary = persistIdentityAuditSnapshot(db, {
+    runId: fourthRun.id,
+    collectedAt: '2026-06-29T01:01:00.000Z',
+    users: [{
+      displayName: 'billy.j',
+      identityStoreUserId: 'user-1',
+      userName: 'billy.j',
+      email: 'billy.j@example.com',
+      orgCode: 'GHI13579',
+      orgName: '데이터파트',
+      rawOrg: { data: { mainPosition: { orgCode: 'GHI13579', orgName: '데이터파트' } } },
+    }],
+    assignments: [duplicateAssignment, duplicateAssignment],
+  });
+  completeIdentityAuditRun(db, fourthRun.id, 'completed', '2026-06-29T01:02:00.000Z');
+
+  assert.equal(fourthSummary.changedUsers, 1);
+  assert.equal(fourthSummary.riskyUsers, 1);
+  const fourthFindings = listIdentityAuditFindings(db, { runId: fourthRun.id });
+  assert.equal(fourthFindings.rows.length, 1);
+  assert.equal(fourthFindings.rows[0].assignment_count, 1);
+  assert.equal(
+    db.prepare('select count(*) as count from identity_aws_assignments where run_id = ?').get(fourthRun.id).count,
+    1,
+  );
+
+  db.prepare(`
+    insert into identity_audit_runs (
+      id, status, started_at, total_users, org_resolved_users,
+      changed_users, risky_users, error_count, error_message
+    ) values (
+      'identity-audit-tie-z', 'running', '2026-06-30T01:00:00.000Z', 0, 0, 0, 0, 0, ''
+    )
+  `).run();
+  db.prepare(`
+    insert into identity_audit_runs (
+      id, status, started_at, total_users, org_resolved_users,
+      changed_users, risky_users, error_count, error_message
+    ) values (
+      'identity-audit-tie-a', 'running', '2026-06-30T01:00:00.000Z', 0, 0, 0, 0, 0, ''
+    )
+  `).run();
+
+  assert.equal(getLatestIdentityAuditRun(db).id, 'identity-audit-tie-a');
 
   db.close();
 } finally {
