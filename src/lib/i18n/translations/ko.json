@@ -88,6 +88,7 @@
   "sidebar.iam": "IAM",
   "sidebar.securityPage": "보안",
   "sidebar.cisCompliance": "CIS 컴플라이언스",
+  "sidebar.identityAudit": "Identity 감사",
   "sidebar.costToggle": "비용:",
   "sidebar.costOn": "ON",
   "sidebar.costOff": "OFF",

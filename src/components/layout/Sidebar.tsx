@@ -123,6 +123,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'sidebar.iam', href: '/iam', icon: Users },
       { labelKey: 'sidebar.securityPage', href: '/security', icon: ShieldCheck },
       { labelKey: 'sidebar.cisCompliance', href: '/compliance', icon: ShieldCheck },
+      { labelKey: 'sidebar.identityAudit', href: '/identity-audit', icon: ClipboardCheck },
     ],
   },
 ];

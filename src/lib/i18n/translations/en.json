@@ -88,6 +88,7 @@
   "sidebar.iam": "IAM",
   "sidebar.securityPage": "Security",
   "sidebar.cisCompliance": "CIS Compliance",
+  "sidebar.identityAudit": "Identity Audit",
   "sidebar.costToggle": "Cost:",
   "sidebar.costOn": "ON",
   "sidebar.costOff": "OFF",
