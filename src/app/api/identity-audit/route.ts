@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getConfig } from '@/lib/app-config';
 import { openAssetDb } from '@/lib/assets/asset-db';
 import { runIdentityAudit } from '@/lib/identity-audit/audit-runner';
+import { startIdentityAuditScheduler } from '@/lib/identity-audit/scheduler';
 import {
   exportIdentityAuditFindingsCsv,
   getLatestIdentityAuditRun,
@@ -10,6 +11,8 @@ import {
 } from '@/lib/identity-audit/repository';
 
 export const runtime = 'nodejs';
+
+startIdentityAuditScheduler();
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);

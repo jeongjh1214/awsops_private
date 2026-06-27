@@ -19,6 +19,7 @@ try {
     'src/lib/identity-audit/aws-collector.ts',
     'src/lib/identity-audit/repository.ts',
     'src/lib/identity-audit/audit-runner.ts',
+    'src/lib/identity-audit/scheduler.ts',
     '--module', 'commonjs',
     '--target', 'es2020',
     '--esModuleInterop',
@@ -42,12 +43,18 @@ try {
     runIdentityAudit,
   } = require(join(outDir, 'identity-audit/audit-runner.js'));
   const {
+    isTuesdayTenKst,
+  } = require(join(outDir, 'identity-audit/scheduler.js'));
+  const {
     fetchOrganizationPositionsForUsers,
     parseOrganizationPosition,
   } = require(join(outDir, 'identity-audit/org-api.js'));
   const {
     expandIdentityCenterAssignments,
   } = require(join(outDir, 'identity-audit/aws-collector.js'));
+
+  assert.equal(isTuesdayTenKst(new Date('2026-06-23T01:15:00.000Z')), true);
+  assert.equal(isTuesdayTenKst(new Date('2026-06-23T00:59:59.000Z')), false);
 
   const rawBillyOrg = {
     data: {
