@@ -85,9 +85,10 @@ export default function IdentityAuditPage() {
     setLoading(true);
     setError('');
     try {
-      const data = await fetchJson<AuditResponse>(API_URL);
-      setLatestRun(data.latestRun ?? null);
-      setFindings(data.findings?.rows ?? []);
+      const data = await fetchJson<unknown>(API_URL);
+      const normalized = normalizeAuditResponse(data);
+      setLatestRun(normalized.latestRun);
+      setFindings(normalized.findings.rows);
     } catch (err) {
       setLatestRun(null);
       setFindings([]);
@@ -149,7 +150,7 @@ export default function IdentityAuditPage() {
                 <span className="font-mono text-sm text-gray-200">
                   {latestRun ? formatDate(latestRun.finished_at || latestRun.started_at) : '-'}
                 </span>
-                {latestRun && <StatusBadge status={latestRun.status} />}
+                {latestRun && <StatusBadge status={formatStatus(latestRun.status)} />}
                 {latestRun?.error_count ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-red/10 px-2 py-0.5 text-xs text-accent-red">
                     <AlertCircle size={12} />
@@ -381,17 +382,13 @@ function OrgText({ code, name }: { code: string; name: string }) {
   );
 }
 
-function SeverityBadge({ severity }: { severity: string }) {
-  const normalized = severity.toLowerCase();
-  const className = normalized === 'high'
-    ? 'border-accent-red/20 bg-accent-red/10 text-accent-red'
-    : normalized === 'medium'
-      ? 'border-accent-orange/20 bg-accent-orange/10 text-accent-orange'
-      : 'border-gray-500/20 bg-gray-500/10 text-gray-400';
+function SeverityBadge({ severity }: { severity: unknown }) {
+  const label = formatStatus(severity);
+  const className = getSeverityClass(severity);
 
   return (
     <span className={`inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-xs font-medium uppercase ${className}`}>
-      <span className="truncate">{severity || 'unknown'}</span>
+      <span className="truncate">{label}</span>
     </span>
   );
 }
@@ -425,4 +422,82 @@ function formatDate(value?: string | null) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat('ko-KR').format(Number.isFinite(value) ? value : 0);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeAuditResponse(value: unknown): AuditResponse {
+  const data: Record<string, unknown> = isRecord(value) ? value : {};
+  const findings: Record<string, unknown> = isRecord(data.findings) ? data.findings : {};
+  const runs = Array.isArray(data.runs)
+    ? data.runs.map(normalizeAuditRun).filter((run): run is AuditRun => run !== null)
+    : [];
+
+  return {
+    latestRun: normalizeAuditRun(data.latestRun),
+    runs,
+    findings: {
+      rows: normalizeFindingRows(findings.rows),
+    },
+  };
+}
+
+function normalizeAuditRun(value: unknown): AuditRun | null {
+  if (!isRecord(value)) return null;
+
+  return {
+    id: asString(value.id),
+    status: formatStatus(value.status),
+    started_at: asString(value.started_at),
+    finished_at: value.finished_at === null ? null : asString(value.finished_at),
+    total_users: asNumber(value.total_users),
+    org_resolved_users: asNumber(value.org_resolved_users),
+    changed_users: asNumber(value.changed_users),
+    risky_users: asNumber(value.risky_users),
+    error_count: asNumber(value.error_count),
+    error_message: asString(value.error_message),
+  };
+}
+
+function normalizeFindingRows(value: unknown): Finding[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.filter(isRecord).map((finding) => ({
+    id: asString(finding.id),
+    run_id: asString(finding.run_id),
+    display_name: asString(finding.display_name),
+    severity: formatStatus(finding.severity),
+    old_org_code: asString(finding.old_org_code),
+    old_org_name: asString(finding.old_org_name),
+    new_org_code: asString(finding.new_org_code),
+    new_org_name: asString(finding.new_org_name),
+    assignment_count: asNumber(finding.assignment_count),
+    message: asString(finding.message),
+    created_at: asString(finding.created_at),
+  }));
+}
+
+function asString(value: unknown) {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+function asNumber(value: unknown) {
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function formatStatus(value: unknown) {
+  const status = asString(value).trim();
+  return status || 'unknown';
+}
+
+function getSeverityClass(severity: unknown) {
+  const normalized = formatStatus(severity).toLowerCase();
+  if (normalized === 'high') return 'border-accent-red/20 bg-accent-red/10 text-accent-red';
+  if (normalized === 'medium') return 'border-accent-orange/20 bg-accent-orange/10 text-accent-orange';
+  return 'border-gray-500/20 bg-gray-500/10 text-gray-400';
 }
