@@ -10,6 +10,7 @@ let schedulerTimer: ReturnType<typeof setInterval> | null = null;
 let lastTriggeredKstHourKey: string | null = null;
 
 export function startIdentityAuditScheduler(): void {
+  if (isNextBuildPhase()) return;
   if (schedulerTimer) return;
 
   const check = async () => {
@@ -30,10 +31,10 @@ export function startIdentityAuditScheduler(): void {
     }
   };
 
-  void check();
   schedulerTimer = setInterval(() => {
     void check();
   }, CHECK_INTERVAL_MS);
+  (schedulerTimer as { unref?: () => void }).unref?.();
 }
 
 export function stopIdentityAuditScheduler(): void {
@@ -54,4 +55,8 @@ function toKstHourKey(date: Date): string {
 
 function toKstDate(date: Date): Date {
   return new Date(date.getTime() + KST_OFFSET_MS);
+}
+
+function isNextBuildPhase(): boolean {
+  return process.env.NEXT_PHASE === 'phase-production-build';
 }

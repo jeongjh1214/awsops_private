@@ -39,12 +39,15 @@ try {
     getLatestIdentityAuditRun,
     exportIdentityAuditFindingsCsv,
   } = require(join(outDir, 'identity-audit/repository.js'));
+  const auditRunnerModule = require(join(outDir, 'identity-audit/audit-runner.js'));
   const {
     runIdentityAudit,
-  } = require(join(outDir, 'identity-audit/audit-runner.js'));
+  } = auditRunnerModule;
+  const schedulerModule = require(join(outDir, 'identity-audit/scheduler.js'));
   const {
     isTuesdayTenKst,
-  } = require(join(outDir, 'identity-audit/scheduler.js'));
+  } = schedulerModule;
+  const configModule = require(join(outDir, 'identity-audit/config.js'));
   const {
     fetchOrganizationPositionsForUsers,
     parseOrganizationPosition,
@@ -55,6 +58,74 @@ try {
 
   assert.equal(isTuesdayTenKst(new Date('2026-06-23T01:15:00.000Z')), true);
   assert.equal(isTuesdayTenKst(new Date('2026-06-23T00:59:59.000Z')), false);
+
+  const originalRunIdentityAudit = auditRunnerModule.runIdentityAudit;
+  const originalResolveIdentityAuditConfig = configModule.resolveIdentityAuditConfig;
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  const originalDate = globalThis.Date;
+  let scheduledCallback;
+  let runCount = 0;
+  try {
+    auditRunnerModule.runIdentityAudit = async () => {
+      runCount += 1;
+      return { runId: 'scheduler-test-run', status: 'completed', summary: {} };
+    };
+    configModule.resolveIdentityAuditConfig = () => ({
+      enabled: true,
+      profile: 'identity-audit-profile',
+      region: 'ap-northeast-2',
+      endpointUrls: {},
+      organizationApi: {},
+      schedule: {
+        dayOfWeek: 2,
+        hourKst: 10,
+        timezone: 'Asia/Seoul',
+      },
+    });
+    globalThis.setInterval = (callback, intervalMs) => {
+      assert.equal(intervalMs, 5 * 60 * 1000);
+      scheduledCallback = callback;
+      return { schedulerTestTimer: true };
+    };
+    globalThis.clearInterval = () => {};
+    const fixedNow = new originalDate('2026-06-23T01:15:00.000Z');
+    globalThis.Date = class extends originalDate {
+      constructor(...args) {
+        if (args.length === 0) {
+          return new originalDate(fixedNow);
+        }
+        return new originalDate(...args);
+      }
+
+      static now() {
+        return fixedNow.getTime();
+      }
+
+      static parse(value) {
+        return originalDate.parse(value);
+      }
+
+      static UTC(...args) {
+        return originalDate.UTC(...args);
+      }
+    };
+
+    schedulerModule.startIdentityAuditScheduler();
+    assert.equal(runCount, 0);
+    assert.equal(typeof scheduledCallback, 'function');
+    scheduledCallback();
+    assert.equal(runCount, 1);
+    scheduledCallback();
+    assert.equal(runCount, 1);
+  } finally {
+    schedulerModule.stopIdentityAuditScheduler();
+    auditRunnerModule.runIdentityAudit = originalRunIdentityAudit;
+    configModule.resolveIdentityAuditConfig = originalResolveIdentityAuditConfig;
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+    globalThis.Date = originalDate;
+  }
 
   const rawBillyOrg = {
     data: {

@@ -12,9 +12,8 @@ import {
 
 export const runtime = 'nodejs';
 
-startIdentityAuditScheduler();
-
 export async function GET(request: NextRequest) {
+  startIdentityAuditScheduler();
   const { searchParams } = new URL(request.url);
   const db = openAssetDb(getConfig().assetInventory?.sqlitePath);
   try {
@@ -41,6 +40,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  startIdentityAuditScheduler();
   const body = await readJsonBody(request);
   const action = optionalString(body.action);
 
