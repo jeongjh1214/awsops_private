@@ -42,6 +42,8 @@ Approved AWS APIs
 - Queries are read-only and run from the existing host.
 - Dashboard collection follows the host's Steampipe connection configuration and configured AWS profiles.
 - Services without an approved endpoint path must be disabled or excluded from collection.
+- Cloud Asset Inventory persists selected resources to SQLite so the dashboard can answer historical and metadata questions without relying only on live Steampipe query output.
+- S3 bucket sync uses direct AWS SDK `ListBuckets` through the configured S3 VPCE endpoint when enabled. This avoids Steampipe S3 hydrate behavior in environments where `aws s3api list-buckets` works but the Steampipe S3 table fails.
 
 ### Private AI Runtime
 
@@ -51,6 +53,36 @@ Approved AWS APIs
 - `agent/private_runtime/` loads environment config, endpoint URLs, runtime limits, boto3 clients, and audit logging.
 - Bedrock calls use `bedrockProfile` from `data/config.json`.
 
+### Cloud Asset Inventory
+
+- Stored in `data/awsops.db` through `assetInventory.sqlitePath`.
+- Current built-in sync support is allowlisted with `assetInventory.supportedResourceTypes`.
+- The sample default supports `ec2_instance` and `s3_bucket`.
+- Custom fields are managed by admin-token protected APIs.
+- AI answers for Cloud Asset Inventory use the saved ledger instead of triggering live discovery.
+
+### S3 Governance
+
+S3 관리대장은 Cloud Asset Inventory의 `s3_bucket` record와 별도 governance record를 연결한다.
+
+It is intended for audit-friendly fields such as account name, account ID, phase, bucket name, 담당조직, 용도, 이력, 개인정보 여부, 개인정보 데이터 유효기간 인지/적용 여부, 적용 데이터 유효기간, and 비고.
+
+Deleted buckets remain in the ledger as historical records. Governance metadata changes are kept as history so audit reviewers can see what changed and when.
+
+### IAM Identity Center Org Audit
+
+Identity 감사 detects users whose organization changed but who still have AWS account assignments.
+
+Data sources:
+
+- IAM Identity Center / Identity Store through AWS SDK read-only calls
+- Knock organization API keyed by IAM Identity Center `DisplayName`
+- Existing SQLite database for snapshots, findings, and run history
+
+The audit uses `identityAudit.awsProfile` first. If it is not set, it falls back to `environments.<active>.identityCenterProfile`, then `environments.<active>.awsProfile`.
+
+The weekly scheduler starts lazily when `/awsops/api/identity-audit` is called. Module import and `npm run build` must not make AWS or organization API calls.
+
 ### Configuration
 
 `data/config.json` owns environment selection:
@@ -59,8 +91,11 @@ Approved AWS APIs
 - `environments.<name>.endpointMode`: `explicit`, `privateDns`, or `hybrid`
 - `environments.<name>.bedrockProfile`: AWS credentials profile for Bedrock
 - `environments.<name>.awsProfile`: AWS credentials profile for other AWS API calls
+- `environments.<name>.identityCenterProfile`: AWS credentials profile for IAM Identity Center calls
 - `environments.<name>.endpointUrls`: explicit VPCE service URLs when required
 - `agent.provider`: `local-mcp-langgraph` for private mode
+- `identityAudit`: scheduler, Identity Center profile override, and organization API settings
+- `assetInventory`: SQLite path, supported resource types, and admin token hash
 
 See `docs/examples/config.vm-private.example.json`.
 
@@ -92,12 +127,27 @@ If the application needs one of these resources, the platform/security team must
 5. The private runtime resolves AWS clients from `data/config.json`.
 6. AWS calls use configured profiles and endpoint URLs or existing private DNS.
 
+### Persistence Model
+
+`data/awsops.db` is the local persistence layer for governance and audit data.
+
+| Table group | Purpose |
+| --- | --- |
+| Asset records/custom fields/history | Cloud Asset Inventory and admin-defined metadata |
+| S3 governance records/history | S3 관리대장 and deleted bucket history |
+| Identity audit runs/users/snapshots/assignments/findings | IAM Identity Center organization-change audit |
+
+Steampipe remains the live query layer. SQLite is the audit/governance ledger.
+
 ## Verification
 
 Run from the repository root:
 
 ```bash
 python3 -m unittest discover -s tests/private -p 'test_*.py' -v
+node tests/assets/test_identity_audit_config.mjs
+node tests/assets/test_identity_audit_db.mjs
+node tests/assets/test_identity_audit_runner.mjs
 bash -n scripts/*.sh
 python3 -m json.tool docs/examples/config.vm-private.example.json >/dev/null
 npm run build

@@ -17,6 +17,18 @@ It must not create or modify these AWS resources:
 
 The platform/security team must pre-provision network paths, VPC endpoints, VM access, IAM roles, and credentials. AWSops only reads configuration and calls AWS APIs through the configured profiles and endpoint URLs.
 
+## 주요 기능
+
+| 영역 | 설명 | 저장 위치 |
+| --- | --- | --- |
+| Private dashboard | 내부망에서 AWS 운영 현황을 조회하는 Next.js 화면 | runtime/API |
+| Private AI | local MCP + LangGraph + Bedrock Runtime 기반 질의 | Bedrock profile, local agent |
+| Cloud Asset Inventory | EC2/S3 등 cloud resource와 커스텀 메타데이터 원장화 | `data/awsops.db` |
+| S3 관리대장 | bucket별 담당조직, 용도, 개인정보/보존기간, 비고 관리 | `data/awsops.db` |
+| IAM Identity Center 감사 | 부서 이동자 중 AWS 권한 잔존자 탐지 | `data/awsops.db` |
+
+S3 관리대장과 Identity 감사는 Steampipe의 임시 조회 결과만 쓰지 않고 SQLite에 이력을 남긴다. 삭제된 bucket, 메타데이터 변경, 조직 변경 finding을 감사 목적으로 추적하기 위한 구조다.
+
 ## Architecture
 
 ```text
@@ -164,6 +176,8 @@ The private branch uses local MCP + LangGraph instead of Bedrock AgentCore.
 - CloudFront collection is skipped in dashboard and cache warmer when private local mode is active.
 - Bedrock calls use the configured `bedrockProfile` from `data/config.json`.
 
+Identity 감사는 AI 질의의 근거 데이터로 확장할 수 있도록 저장 테이블을 갖추고 있다. 저장된 finding 기반 AI 답변은 설계 완료 상태이며, 현재 UI/API의 기본 감사 조회와 CSV export가 우선 구현되어 있다.
+
 ## Repository Layout
 
 ```text
@@ -176,15 +190,31 @@ scripts/02-*.sh               Next.js setup
 scripts/03-*.sh               Build and deployment on existing VM
 scripts/13-*.sh               Local private agent start/verify
 docs/examples/                Private config examples
+docs/wiki/                    내재화 운영/아키텍처 위키 문서
 tests/private/                Private runtime unit tests
 ```
 
 There is intentionally no `infra-cdk/` directory in this branch.
 
+## Wiki 문서
+
+내재화 배경, 운영 방식, 기능별 설계는 `docs/wiki/` 아래에 정리되어 있다.
+
+- `docs/wiki/00-overview.md`
+- `docs/wiki/01-architecture.md`
+- `docs/wiki/02-configuration.md`
+- `docs/wiki/03-cloud-assets-and-s3-governance.md`
+- `docs/wiki/04-identity-center-org-audit.md`
+- `docs/wiki/05-operations-runbook.md`
+- `docs/wiki/06-current-status-and-roadmap.md`
+
 ## Verification
 
 ```bash
 python3 -m unittest discover -s tests/private -p 'test_*.py' -v
+node tests/assets/test_identity_audit_config.mjs
+node tests/assets/test_identity_audit_db.mjs
+node tests/assets/test_identity_audit_runner.mjs
 bash -n scripts/*.sh
 python3 -m json.tool docs/examples/config.vm-private.example.json >/dev/null
 npm run build

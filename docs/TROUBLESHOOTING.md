@@ -235,6 +235,92 @@ Generate a hash:
 node -e "const {createHash}=require('crypto'); const token=process.argv[1]; console.log('sha256:'+createHash('sha256').update(token).digest('hex'))" '<admin-token>'
 ```
 
+## S3 Governance Record Not Found
+
+S3 관리대장은 S3 bucket discovery와 별도 record를 사용한다. Bucket이 sync되어 있어도 governance record를 아직 만들지 않았다면 UI에서 `s3 governance record not found`가 보일 수 있다.
+
+초기 구성 절차:
+
+1. Cloud Assets에서 `s3_bucket` sync를 먼저 실행한다.
+2. S3 관리대장에서 bucket별 governance record를 만든다.
+3. 담당조직, 용도, 개인정보/보존기간, 비고를 입력한다.
+
+확인 쿼리:
+
+```bash
+sqlite3 data/awsops.db \
+  "select service, resource_type, resource_name, status, is_active from asset_records where resource_type='s3_bucket' order by resource_name limit 20;"
+```
+
+Deleted bucket도 감사 이력을 위해 즉시 삭제하지 않는다. 실제 AWS에는 없지만 ledger에는 과거 record와 governance history가 남을 수 있다.
+
+## Identity 감사가 실행되지 않음
+
+Config와 환경변수를 먼저 확인한다.
+
+```bash
+python3 -m json.tool data/config.json >/dev/null
+python3 - <<'PY'
+import json
+cfg=json.load(open('data/config.json'))
+env=cfg['environments'][cfg['activeEnvironment']]
+print('activeEnvironment=', cfg['activeEnvironment'])
+print('identityAudit.enabled=', cfg.get('identityAudit', {}).get('enabled'))
+print('identityAudit.awsProfile=', cfg.get('identityAudit', {}).get('awsProfile'))
+print('identityCenterProfile=', env.get('identityCenterProfile'))
+print('identity endpoints=', {k:v for k,v in env.get('endpointUrls', {}).items() if k in ('identitystore','sso-admin','sts')})
+PY
+test -n "$KREW_API_KEY" && echo "KREW_API_KEY is set"
+```
+
+IAM Identity Center endpoint path:
+
+```bash
+aws sso-admin list-instances \
+  --profile identity-audit-profile \
+  --region ap-northeast-2 \
+  --endpoint-url https://vpce-xxxxxxxx.sso.ap-northeast-2.vpce.amazonaws.com
+```
+
+Identity Store test requires the `IdentityStoreId` returned by `sso-admin list-instances`:
+
+```bash
+aws identitystore list-users \
+  --profile identity-audit-profile \
+  --region ap-northeast-2 \
+  --identity-store-id d-xxxxxxxxxx \
+  --endpoint-url https://vpce-xxxxxxxx.identitystore.ap-northeast-2.vpce.amazonaws.com \
+  --max-results 1
+```
+
+Organization API test:
+
+```bash
+curl -fsS \
+  -H "X-API-Key: $KREW_API_KEY" \
+  https://knock-api.kakaopay.com/papi/v1/krew/<DisplayName> | python3 -m json.tool
+```
+
+수동 실행:
+
+```bash
+curl -fsS -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"run"}' \
+  http://127.0.0.1:3000/awsops/api/identity-audit | python3 -m json.tool
+```
+
+DB 확인:
+
+```bash
+sqlite3 data/awsops.db \
+  "select id, status, started_at, finished_at, total_users, changed_users, risky_users, error_count, error_message from identity_audit_runs order by started_at desc limit 5;"
+sqlite3 data/awsops.db \
+  "select display_name, old_org_name, new_org_name, assignment_count, severity from identity_audit_findings order by created_at desc limit 20;"
+```
+
+스케줄러는 app이 떠 있고 `/awsops/api/identity-audit`가 한 번 이상 호출된 뒤 lazy start한다. `npm run build`나 module import 중에는 AWS/API 호출을 하지 않는다.
+
 ## AI Chat Returns 502
 
 Check the local agent first:

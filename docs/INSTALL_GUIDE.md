@@ -20,8 +20,9 @@ Network access, VPC endpoints, IAM roles, credentials, DNS, and VM provisioning 
 - Steampipe and the AWS plugin
 - Powerpipe if CIS benchmark pages are used
 - kubectl if Kubernetes pages are used
-- `~/.aws/credentials` profiles for AWSops and Bedrock
+- `~/.aws/credentials` profiles for AWSops, Bedrock, and IAM Identity Center when Identity 감사 is enabled
 - Existing approved VPC endpoint URLs or private DNS
+- `KREW_API_KEY` environment variable when Identity 감사 is enabled
 
 For company workstation testing, also read `docs/runbooks/company-pc-local-test.md`.
 
@@ -51,6 +52,15 @@ AWS_PROFILE=bedrock-local-profile aws bedrock-runtime invoke-model \
 
 The endpoint URL above must be a Bedrock Runtime VPCE URL. The hostname should contain `bedrock-runtime`.
 
+If Identity 감사 is enabled, verify the dedicated IAM Identity Center profile and endpoint path:
+
+```bash
+aws sso-admin list-instances \
+  --profile identity-audit-profile \
+  --region ap-northeast-2 \
+  --endpoint-url https://vpce-xxxxxxxx.sso.ap-northeast-2.vpce.amazonaws.com
+```
+
 ## 2. Configure AWSops
 
 ```bash
@@ -63,7 +73,10 @@ Edit:
 - `activeEnvironment`
 - `bedrockProfile`
 - `awsProfile`
+- `identityCenterProfile`
 - `endpointUrls`
+- `assetInventory`
+- `identityAudit`
 - `accounts`
 
 Use `activeEnvironment: "local"` for workstation testing.
@@ -110,7 +123,39 @@ Verify:
 bash scripts/13-verify-private-agent.sh
 ```
 
-## 6. Optional Kubernetes Access
+## 6. Optional Identity 감사
+
+Enable `identityAudit.enabled` in `data/config.json`, set the Identity Center profile, and export the organization API key:
+
+```bash
+export KREW_API_KEY='...'
+```
+
+Required endpoint URLs for explicit local/dev mode:
+
+- `endpointUrls.identitystore`
+- `endpointUrls.sso-admin`
+- `endpointUrls.sts`
+
+Run the audit manually:
+
+```bash
+curl -fsS -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"run"}' \
+  http://127.0.0.1:3000/awsops/api/identity-audit | python3 -m json.tool
+```
+
+Check findings:
+
+```bash
+sqlite3 data/awsops.db \
+  "select display_name, old_org_name, new_org_name, assignment_count, severity from identity_audit_findings order by created_at desc limit 20;"
+```
+
+The weekly scheduler runs only after the API route has been touched by the running app. It does not run during `npm run build`.
+
+## 7. Optional Kubernetes Access
 
 If Kubernetes pages are used, kubeconfig must already be approved. You may update local kubeconfig for an existing cluster:
 
@@ -120,7 +165,7 @@ bash scripts/04-setup-eks-access.sh
 
 Do not use AWSops to create EKS clusters or IAM roles.
 
-## 7. General Verification
+## 8. General Verification
 
 ```bash
 bash scripts/10-verify.sh
@@ -130,6 +175,9 @@ Private runtime unit tests:
 
 ```bash
 python3 -m unittest discover -s tests/private -p 'test_*.py' -v
+node tests/assets/test_identity_audit_config.mjs
+node tests/assets/test_identity_audit_db.mjs
+node tests/assets/test_identity_audit_runner.mjs
 ```
 
 Company workstation diagnostics:
