@@ -212,7 +212,9 @@ steampipe query "select name from aws_123456789012.aws_s3_bucket limit 5"
 
 Cloud Assets sync uses Steampipe and the existing Steampipe AWS connection. It does not create AWS resources or VPC endpoints.
 
-S3 bucket sync is the exception: AWSops calls S3 `ListBuckets` directly through the AWS SDK using `data/config.json` profile, region, and `endpointUrls.s3`. This intentionally avoids Steampipe AWS plugin S3 table hydrate behavior when direct `aws s3api list-buckets` works but `steampipe query ...aws_s3_bucket...` fails.
+S3 bucket sync, the S3 dashboard, and live S3 questions in AI Assistant all use the same Steampipe `aws_s3_bucket` table. If `endpointUrls.s3`, profile, region, or connection name changes, restart Steampipe through `scripts/16-start-steampipe-private.sh` before testing any of those surfaces.
+
+If a resource query returns an empty result while active assets already exist, account-scoped sync verifies the same connection with `aws_caller_identity` before recording the assets as missing. A failed health probe leaves the saved assets active and reports a sync failure. An unscoped empty result is also protected; rerun sync with a specific account selected before treating it as a real zero-resource result.
 
 ## Cloud Asset Inventory AI Has No Data
 
@@ -224,6 +226,17 @@ sqlite3 data/awsops.db 'select service, resource_type, count(*) from asset_recor
 ```
 
 If a specific account is selected in the UI, the AI context is scoped to that `account_id`.
+
+## AI Request Is Rejected
+
+The Next.js AI route and local LangGraph API apply the same request limits:
+
+- request body: 512 KB
+- message count: 50
+- one message: 50,000 characters
+- combined message content: 200,000 characters
+
+HTTP `413` means the request body exceeded the byte limit. HTTP `400` from Next.js or HTTP `422` from LangGraph means the message structure or content limits were invalid.
 
 ## Cloud Asset Admin Token Fails
 

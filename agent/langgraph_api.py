@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from agent.private_runtime.aws_clients import AwsClientFactory
 from agent.private_runtime.bedrock_chat import (
@@ -24,17 +24,28 @@ config = load_private_config(os.environ.get("AWSOPS_CONFIG", "data/config.json")
 aws_clients = AwsClientFactory(config)
 limits = RuntimeLimits(config.agent)
 
+MAX_CHAT_BODY_BYTES = 512_000
+MAX_CHAT_MESSAGES = 50
+MAX_CHAT_MESSAGE_CHARS = 50_000
+MAX_CHAT_TOTAL_CHARS = 200_000
+
 
 class ChatMessage(BaseModel):
-    role: str
-    content: str
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=MAX_CHAT_MESSAGE_CHARS)
 
 
 class ChatRequest(BaseModel):
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] = Field(min_length=1, max_length=MAX_CHAT_MESSAGES)
     accountId: str | None = None
     route: str | None = None
     model: str | None = None
+
+    @model_validator(mode="after")
+    def validate_total_message_chars(self) -> "ChatRequest":
+        if sum(len(message.content) for message in self.messages) > MAX_CHAT_TOTAL_CHARS:
+            raise ValueError("combined message content is too large")
+        return self
 
 
 @app.get("/health")
@@ -108,6 +119,20 @@ async def _stream_bedrock_response(request: ChatRequest):
         await task
 
 
+async def _parse_chat_request(request: Request) -> ChatRequest:
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_CHAT_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="request body too large")
+
+    try:
+        return ChatRequest.model_validate_json(bytes(body))
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+
 @app.post("/chat/stream")
-async def chat_stream(request: ChatRequest) -> StreamingResponse:
-    return StreamingResponse(_stream_bedrock_response(request), media_type="text/event-stream")
+async def chat_stream(request: Request) -> StreamingResponse:
+    chat_request = await _parse_chat_request(request)
+    return StreamingResponse(_stream_bedrock_response(chat_request), media_type="text/event-stream")

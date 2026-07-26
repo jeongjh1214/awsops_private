@@ -32,7 +32,9 @@ data/awsops.db
 - `ec2_instance`
 - `s3_bucket`
 
-S3 bucket은 Steampipe hydrate 문제가 있을 수 있어 AWS SDK `ListBuckets`로 직접 수집한다. 이때 `data/config.json`의 account profile, region, `endpointUrls.s3`를 사용한다.
+S3 bucket은 Steampipe `aws_s3_bucket`에서 수집한다. S3 화면과 AI Assistant의 live S3 질의도 같은 table과 account-scoped search path를 사용한다.
+
+`endpointUrls.s3`, account profile, region, connection name을 바꾸면 `scripts/16-start-steampipe-private.sh`로 Steampipe service를 재기동해야 한다.
 
 ### AI 사용 방식
 

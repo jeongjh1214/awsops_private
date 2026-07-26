@@ -141,6 +141,33 @@ export function detectS3GovernanceQuestion(question: string): boolean {
   );
 }
 
+export function detectLiveS3InventoryQuestion(question: string): boolean {
+  if (detectS3GovernanceQuestion(question)) return false;
+
+  const normalized = normalize(question);
+  const mentionsS3 = /\b(s3|bucket|buckets)\b/.test(normalized) || normalized.includes('버킷');
+  if (!mentionsS3) return false;
+
+  return [
+    '목록',
+    '리스트',
+    '현황',
+    '몇개',
+    '몇 개',
+    '상태',
+    '보여',
+    '조회',
+    '가져',
+    '현재',
+    '실제',
+    'list',
+    'count',
+    'status',
+    'show',
+    'inventory',
+  ].some((keyword) => normalized.includes(keyword));
+}
+
 export function detectS3GovernanceConversation(messages: Array<{ role: string; content: string }>): boolean {
   const recentUserMessages = messages
     .filter((message) => message.role === 'user')

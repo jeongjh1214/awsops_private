@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
@@ -149,7 +149,8 @@ try {
   }
 
   const scopedDbPath = join(outDir, 'scoped-sync.db');
-  let capturedS3Opts;
+  let capturedRunQuerySql;
+  let capturedRunQueryOpts;
   const scopedSummary = await runAssetSync({
     resourceTypes: ['s3_bucket'],
     accountId: '123456789012',
@@ -162,11 +163,9 @@ try {
         supportedResourceTypes: ['s3_bucket'],
       }),
       openAssetDb,
-      runQuery: async () => {
-        throw new Error('S3 bucket sync should not use Steampipe runQuery');
-      },
-      listS3Buckets: async (opts) => {
-        capturedS3Opts = opts;
+      runQuery: async (sql, opts) => {
+        capturedRunQuerySql = sql;
+        capturedRunQueryOpts = opts;
         return {
           rows: [{
             account_id: '123456789012',
@@ -177,9 +176,73 @@ try {
       },
     },
   });
-  assert.deepEqual(capturedS3Opts, { accountId: '123456789012' });
+  assert.match(capturedRunQuerySql.toLowerCase(), /\bfrom\s+aws_s3_bucket\b/);
+  assert.deepEqual(capturedRunQueryOpts, { bustCache: true, accountId: '123456789012' });
   assert.deepEqual(scopedSummary.selected, ['s3_bucket']);
   assert.equal(scopedSummary.discovered, 1);
+
+  const protectedSummary = await runAssetSync({
+    resourceTypes: ['s3_bucket'],
+    accountId: '123456789012',
+    sqlitePath: scopedDbPath,
+    dependencies: {
+      getAssetInventoryConfig: () => ({
+        enabled: true,
+        dbProvider: 'sqlite',
+        sqlitePath: scopedDbPath,
+        supportedResourceTypes: ['s3_bucket'],
+      }),
+      openAssetDb,
+      runQuery: async (sql) => (
+        /\bfrom\s+aws_caller_identity\b/i.test(sql)
+          ? { rows: [], error: 'transient Steampipe connection failure' }
+          : { rows: [] }
+      ),
+    },
+  });
+  assert.equal(protectedSummary.missing, 0);
+  assert.match(protectedSummary.failed[0].error, /health probe failed/i);
+  let scopedDb = openAssetDb(scopedDbPath);
+  assert.equal(
+    scopedDb.prepare("select is_active from asset_records where resource_type='s3_bucket'").get().is_active,
+    1,
+  );
+  scopedDb.close();
+
+  const confirmedEmptySummary = await runAssetSync({
+    resourceTypes: ['s3_bucket'],
+    accountId: '123456789012',
+    sqlitePath: scopedDbPath,
+    dependencies: {
+      getAssetInventoryConfig: () => ({
+        enabled: true,
+        dbProvider: 'sqlite',
+        sqlitePath: scopedDbPath,
+        supportedResourceTypes: ['s3_bucket'],
+      }),
+      openAssetDb,
+      runQuery: async (sql) => (
+        /\bfrom\s+aws_caller_identity\b/i.test(sql)
+          ? { rows: [{ account_id: '123456789012' }] }
+          : { rows: [] }
+      ),
+    },
+  });
+  assert.equal(confirmedEmptySummary.failed.length, 0);
+  assert.equal(confirmedEmptySummary.missing, 1);
+  scopedDb = openAssetDb(scopedDbPath);
+  assert.equal(
+    scopedDb.prepare("select is_active from asset_records where resource_type='s3_bucket'").get().is_active,
+    0,
+  );
+  scopedDb.close();
+
+  const s3PageSource = readFileSync('src/app/s3/page.tsx', 'utf8');
+  assert.match(s3PageSource, /\/awsops\/api\/steampipe/);
+  assert.doesNotMatch(s3PageSource, /\/awsops\/api\/s3(?:['"`?])/);
+
+  const assetsRouteSource = readFileSync('src/app/api/assets/route.ts', 'utf8');
+  assert.doesNotMatch(assetsRouteSource, /s3-sdk-sync|listS3Buckets/);
 } finally {
   rmSync(outDir, { recursive: true, force: true });
 }

@@ -16,7 +16,7 @@ connection "aws" {
 
 # S3 VPCE note:
 # Keep the Steampipe connection profile/region here, but set the S3 endpoint
-# outside this file with one of the service-specific AWS SDK mechanisms below.
+# outside this file with one of the service-specific endpoint mechanisms below.
 # Keep default_region aligned with the S3 VPCE region; S3 bucket-list calls can
 # otherwise be signed with us-east-1 even when regions only contains ap-northeast-2.
 # Do not set connection-level endpoint_url unless every AWS service should use

@@ -43,7 +43,8 @@ Approved AWS APIs
 - Dashboard collection follows the host's Steampipe connection configuration and configured AWS profiles.
 - Services without an approved endpoint path must be disabled or excluded from collection.
 - Cloud Asset Inventory persists selected resources to SQLite so the dashboard can answer historical and metadata questions without relying only on live Steampipe query output.
-- S3 bucket sync uses direct AWS SDK `ListBuckets` through the configured S3 VPCE endpoint when enabled. This avoids Steampipe S3 hydrate behavior in environments where `aws s3api list-buckets` works but the Steampipe S3 table fails.
+- S3 bucket sync, the S3 dashboard, and AI Assistant live S3 questions use the same Steampipe `aws_s3_bucket` table and account-scoped search path.
+- `scripts/16-start-steampipe-private.sh` injects the configured S3 VPCE endpoint and region into the Steampipe service process.
 
 ### Private AI Runtime
 
@@ -52,6 +53,7 @@ Approved AWS APIs
 - `agent/mcp_server.py` provides private MCP tool scaffolding.
 - `agent/private_runtime/` loads environment config, endpoint URLs, runtime limits, boto3 clients, and audit logging.
 - Bedrock calls use `bedrockProfile` from `data/config.json`.
+- Both the Next.js AI route and local LangGraph API reject request bodies over 512 KB, more than 50 messages, messages over 50,000 characters, or combined message content over 200,000 characters.
 
 ### Cloud Asset Inventory
 
@@ -60,6 +62,7 @@ Approved AWS APIs
 - The sample default supports `ec2_instance` and `s3_bucket`.
 - Custom fields are managed by admin-token protected APIs.
 - AI answers for Cloud Asset Inventory use the saved ledger instead of triggering live discovery.
+- An empty account-scoped Steampipe result marks existing assets missing only after `aws_caller_identity` confirms that the same account data path is healthy. An unscoped empty result is not treated as proof that every saved asset was deleted.
 
 ### S3 Governance
 

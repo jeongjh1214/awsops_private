@@ -5,3 +5,4 @@ langgraph>=0.2.0
 langchain-core>=0.3.0
 mcp>=1.0.0
 pg8000>=1.31.0
+pydantic>=2.7.0

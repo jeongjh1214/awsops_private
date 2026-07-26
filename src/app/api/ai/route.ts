@@ -19,6 +19,7 @@ import { getConfig, validateAccountId, getAccountById } from '@/lib/app-config';
 import { recordCall } from '@/lib/agentcore-stats';
 import { saveConversation } from '@/lib/agentcore-memory';
 import { getUserFromRequest } from '@/lib/auth-utils';
+import { AiRequestError, parseAiRequest } from '@/lib/ai-request';
 import { getDefaultDatasource } from '@/lib/app-config';
 import type { DatasourceType } from '@/lib/app-config';
 import { queryDatasource } from '@/lib/datasource-client';
@@ -29,6 +30,7 @@ import {
   buildAssetInventoryContext,
   buildS3GovernanceContext,
   detectAssetInventoryQuestion,
+  detectLiveS3InventoryQuestion,
   detectS3GovernanceConversation,
   formatAssetInventoryContext,
   formatS3GovernanceContext,
@@ -478,6 +480,10 @@ async function classifyIntent(messages: Array<{role: string; content: string}>):
     if (detectAssetInventoryQuestion(latestUserMessage)) {
       console.log('[Intent] Detected asset inventory question');
       return { routes: ['asset-inventory'], inputTokens: 0, outputTokens: 0 };
+    }
+    if (detectLiveS3InventoryQuestion(latestUserMessage)) {
+      console.log('[Intent] Detected live S3 inventory question');
+      return { routes: ['aws-data'], inputTokens: 0, outputTokens: 0 };
     }
 
     const recentMessages = messages.slice(-10);
@@ -1061,8 +1067,11 @@ function ensureAssetDbMigrated(): void {
 export async function POST(request: NextRequest) {
   let reqBody;
   try {
-    reqBody = await request.json();
-  } catch {
+    reqBody = await parseAiRequest(request);
+  } catch (error) {
+    if (error instanceof AiRequestError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
   const { messages, model: modelKey, stream: useStream, lang: clientLang, accountId: rawAccountId } = reqBody;
@@ -1094,9 +1103,6 @@ export async function POST(request: NextRequest) {
   };
 
   const SYSTEM_PROMPT = getSystemPrompt(clientLang);
-
-  if (!messages || !Array.isArray(messages) || messages.length === 0)
-    return NextResponse.json({ error: 'Messages required' }, { status: 400 });
 
   // Cognito 사용자 정보 추출 / Extract Cognito user from JWT
   const currentUser = getUserFromRequest(request);

@@ -62,7 +62,6 @@ export interface RunAssetSyncOptions {
   sqlitePath?: string;
   dependencies?: {
     runQuery?: RunQuery;
-    listS3Buckets?: ListS3Buckets;
     getAssetInventoryConfig?: () => Partial<AssetInventoryRuntimeConfig> | undefined;
     openAssetDb?: (dbPath?: string) => AssetDb;
   };
@@ -72,8 +71,6 @@ export type RunQuery = <T = Record<string, unknown>>(
   sql: string,
   opts?: { bustCache?: boolean; accountId?: string },
 ) => Promise<{ rows: T[]; error?: string }>;
-
-export type ListS3Buckets = (opts?: { accountId?: string }) => Promise<{ rows: SteampipeRow[]; error?: string }>;
 
 export interface AssetInventoryRuntimeConfig {
   enabled: boolean;
@@ -141,6 +138,12 @@ export const ASSET_SYNC_QUERIES: Record<string, AssetSyncQuery> = {
     },
   },
 };
+
+const ASSET_SYNC_HEALTH_QUERY = `
+  SELECT account_id
+  FROM aws_caller_identity
+  LIMIT 1
+`;
 
 export function selectAssetSyncResourceTypes(requested?: string[], configured?: string[]): AssetSyncSelection {
   const supported = Object.keys(ASSET_SYNC_QUERIES);
@@ -236,15 +239,10 @@ export async function runAssetSync(options: RunAssetSyncOptions = {}): Promise<A
     for (const resourceType of summary.selected) {
       const query = ASSET_SYNC_QUERIES[resourceType];
       try {
-        const listS3Buckets = resourceType === 's3_bucket'
-          ? options.dependencies?.listS3Buckets ?? loadListS3Buckets()
-          : undefined;
-        const result = resourceType === 's3_bucket'
-          ? await listS3Buckets!({ accountId: options.accountId })
-          : await runQuery<SteampipeRow>(query.sql, {
-              bustCache: true,
-              accountId: options.accountId,
-            });
+        const result = await runQuery<SteampipeRow>(query.sql, {
+          bustCache: true,
+          accountId: options.accountId,
+        });
         if (result.error) {
           summary.failed.push({ resourceType, error: result.error });
           continue;
@@ -253,10 +251,20 @@ export async function runAssetSync(options: RunAssetSyncOptions = {}): Promise<A
         const assets = result.rows.map((row) => query.normalize(row, startedAt));
         const seenIds = new Set(assets.map((asset) => asset.id));
         const upsertSummary = upsertDiscoveredAssets(db, assets, startedAt);
+        const missingScope = scopeMissingDetection(query.missingScope, options.accountId, assets);
         summary.discovered += upsertSummary.discovered;
         summary.changed += upsertSummary.changed;
         summary.rediscovered += upsertSummary.rediscovered;
-        summary.missing += markMissingAssets(db, seenIds, startedAt, query.missingScope);
+
+        if (assets.length === 0 && hasActiveAssets(db, missingScope)) {
+          const healthError = await verifyEmptyResultDataPath(runQuery, options.accountId);
+          if (healthError) {
+            summary.failed.push({ resourceType, error: healthError });
+            continue;
+          }
+        }
+
+        summary.missing += markMissingAssets(db, seenIds, startedAt, missingScope);
       } catch (err) {
         summary.failed.push({
           resourceType,
@@ -330,16 +338,6 @@ function loadRunQuery(): RunQuery {
     throw new Error('asset sync runQuery dependency is unavailable; pass dependencies.runQuery');
   }
   return (loadCjsDependency(cjsModule, ['./steampipe', '../steampipe']) as { runQuery: RunQuery }).runQuery;
-}
-
-function loadListS3Buckets(): ListS3Buckets {
-  const cjsModule = typeof module === 'object' && typeof module.require === 'function'
-    ? module
-    : undefined;
-  if (!cjsModule) {
-    throw new Error('S3 asset sync dependency is unavailable; pass dependencies.listS3Buckets');
-  }
-  return (loadCjsDependency(cjsModule, ['./s3-sdk-sync', '../s3-sdk-sync']) as { listS3Buckets: ListS3Buckets }).listS3Buckets;
 }
 
 function loadAssetInventoryConfig(): Partial<AssetInventoryRuntimeConfig> | undefined {
@@ -566,6 +564,45 @@ export function markMissingAssets(db: AssetDb, seenIds: Set<string>, now: string
   })();
 
   return missing;
+}
+
+function scopeMissingDetection(
+  scope: AssetMissingScope,
+  requestedAccountId: string | undefined,
+  assets: AssetRecord[],
+): AssetMissingScope {
+  if (requestedAccountId) {
+    return { ...scope, accountIds: [requestedAccountId] };
+  }
+
+  const returnedAccountIds = uniqueStrings(assets.map((asset) => asset.accountId));
+  return returnedAccountIds.length > 0
+    ? { ...scope, accountIds: returnedAccountIds }
+    : scope;
+}
+
+function hasActiveAssets(db: AssetDb, scope: AssetMissingScope): boolean {
+  const activeAssetsQuery = makeActiveAssetsQuery(scope);
+  const row = db.prepare(`${activeAssetsQuery.sql} limit 1`).get(activeAssetsQuery.params);
+  return Boolean(row);
+}
+
+async function verifyEmptyResultDataPath(runQuery: RunQuery, accountId?: string): Promise<string | undefined> {
+  if (!accountId) {
+    return 'Empty unscoped result cannot safely confirm missing assets; run sync for a specific account';
+  }
+
+  const health = await runQuery<{ account_id?: string }>(ASSET_SYNC_HEALTH_QUERY, {
+    bustCache: true,
+    accountId,
+  });
+  if (health.error) {
+    return `Empty result health probe failed: ${health.error}`;
+  }
+  if (!health.rows.some((row) => row.account_id === accountId)) {
+    return `Empty result health probe failed: account ${accountId} was not returned by aws_caller_identity`;
+  }
+  return undefined;
 }
 
 function makeActiveAssetsQuery(scope?: AssetMissingScope): { sql: string; params: Record<string, string> } {

@@ -42,14 +42,13 @@ Steampipe는 AWS resource 조회용 SQL runtime이다.
 
 - AWSops가 Steampipe service를 직접 embedding하지 않는다.
 - `scripts/16-start-steampipe-private.sh`가 AWSops config를 읽고 connection file과 endpoint 환경변수를 준비한다.
-- EC2 등 일반 resource sync는 Steampipe query를 사용한다.
-- S3 bucket sync는 Steampipe hydrate 이슈를 피하기 위해 AWS SDK `ListBuckets` 경로를 사용한다.
+- EC2와 S3를 포함한 Cloud Asset sync는 Steampipe query를 사용한다.
+- S3 화면과 AI Assistant의 live S3 질문도 동일한 `aws_s3_bucket` table을 사용한다.
 
 ### AWS SDK 직접 호출
 
 다음 기능은 AWS SDK를 직접 사용한다.
 
-- S3 bucket sync
 - IAM Identity Center 조직 변경 감사
 - Bedrock Runtime 호출
 
@@ -71,6 +70,13 @@ Private AI는 Bedrock AgentCore를 사용하지 않는다.
 - `/awsops/api/ai`: dashboard AI route
 
 Bedrock 호출은 Bedrock Runtime endpoint와 `bedrockProfile`을 사용한다.
+
+Next.js AI route와 local LangGraph API에는 동일한 요청 제한이 적용된다.
+
+- request body 최대 512 KB
+- message 최대 50개
+- message당 최대 50,000자
+- 전체 message content 최대 200,000자
 
 ### SQLite DB
 
@@ -94,11 +100,14 @@ Bedrock 호출은 Bedrock Runtime endpoint와 `bedrockProfile`을 사용한다.
 ```text
 사용자 sync 실행
   -> Next.js API
-  -> Steampipe query 또는 S3 SDK
+  -> Steampipe query
+  -> 빈 결과이면 동일 account의 aws_caller_identity로 data path 확인
   -> resource normalize
   -> data/awsops.db 저장
   -> Cloud Assets UI / CSV / AI context
 ```
+
+기존 active asset이 있는데 query 결과가 비어 있으면 account-scoped health probe가 성공한 경우에만 해당 asset을 `missing`으로 기록한다. Account를 지정하지 않은 전체 sync의 빈 결과는 삭제 증거로 사용하지 않는다.
 
 ### S3 관리대장
 

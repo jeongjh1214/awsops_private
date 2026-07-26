@@ -69,12 +69,15 @@ steampipe service status
 steampipe query "select instance_id, instance_state from aws_ec2_instance limit 5"
 ```
 
-S3는 AWS SDK 직접 호출 경로도 확인한다.
+S3 VPCE 자체 연결과 Steampipe table을 함께 확인한다.
 
 ```bash
 AWS_PROFILE=awsops-local-profile aws s3api list-buckets \
   --region ap-northeast-2 \
   --endpoint-url https://vpce-xxxxxxxx.s3.ap-northeast-2.vpce.amazonaws.com
+
+bash scripts/16-start-steampipe-private.sh
+steampipe query "select account_id, name, region from aws_s3_bucket limit 5"
 ```
 
 ## Private AI 확인
