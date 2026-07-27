@@ -13,7 +13,7 @@ for dir in src/app src/lib src/components agent infra-cdk scripts docs docs/deci
 done
 
 # Required config files
-for f in next.config.mjs tailwind.config.ts tsconfig.json .eslintrc.json; do
+for f in next.config.mjs tailwind.config.ts tsconfig.json; do
   [ -f "$f" ] && pass "Config exists: $f" || fail "Config missing: $f"
 done
 

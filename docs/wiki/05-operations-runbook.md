@@ -21,11 +21,15 @@ cp docs/examples/config.vm-private.example.json data/config.json
 ## 의존성 설치
 
 ```bash
-npm install
+node --version
+npm ci
+npm audit
 python3 -m pip install -r agent/requirements-private.txt
 ```
 
-회사 PC에서 `better-sqlite3` 같은 native module 오류가 나면 OS/architecture가 맞는 환경에서 `npm install` 또는 `npm ci`를 다시 실행한다. macOS에서 설치한 `node_modules`를 Linux 운영 VM으로 복사하지 않는다.
+Node.js `20.9.0` 이상을 사용한다. 정상 설치 시 `npm ci`와 `npm audit`은 `found 0 vulnerabilities`를 출력해야 한다. `npm audit fix --force`는 Next.js major version과 lint toolchain을 강제로 변경할 수 있으므로 사용하지 않는다.
+
+회사 PC에서 `better-sqlite3` 같은 native module 오류가 나면 OS/architecture가 맞는 환경에서 `npm ci`를 다시 실행한다. macOS에서 설치한 `node_modules`를 Linux 운영 VM으로 복사하지 않는다.
 
 ## 로컬 실행
 
@@ -59,6 +63,7 @@ node tests/assets/test_identity_audit_config.mjs
 node tests/assets/test_identity_audit_db.mjs
 node tests/assets/test_identity_audit_runner.mjs
 npm test
+npm run lint
 npm run build
 ```
 

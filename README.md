@@ -96,7 +96,7 @@ For prod on an AWS VM, use `privateDns` when service private DNS is already enab
 
 ## Required Host Software
 
-- Node.js 20+
+- Node.js 20.9.0+
 - Python 3.11+
 - AWS CLI v2
 - Steampipe with the AWS plugin

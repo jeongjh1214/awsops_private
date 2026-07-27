@@ -14,7 +14,7 @@ Network access, VPC endpoints, IAM roles, credentials, DNS, and VM provisioning 
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 20.9.0+
 - Python 3.11+
 - AWS CLI v2
 - Steampipe and the AWS plugin

@@ -20,21 +20,27 @@ esac
 # Check for common secret patterns
 if [ -f "$FILE_PATH" ]; then
   # AWS Access Key ID (starts with AKIA)
-  if grep -qP 'AKIA[0-9A-Z]{16}' "$FILE_PATH" 2>/dev/null; then
+  if grep -qE 'AKIA[0-9A-Z]{16}' "$FILE_PATH" 2>/dev/null; then
     echo "[secret-scan] Potential AWS Access Key detected in $FILE_PATH"
     exit 1
   fi
 
   # AWS Secret Access Key (40 char base64)
-  if grep -qP 'aws_secret_access_key\s*=\s*[A-Za-z0-9/+=]{40}' "$FILE_PATH" 2>/dev/null; then
+  if grep -qE 'aws_secret_access_key[[:space:]]*=[[:space:]]*[A-Za-z0-9/+=]{40}' "$FILE_PATH" 2>/dev/null; then
     echo "[secret-scan] Potential AWS Secret Key detected in $FILE_PATH"
     exit 1
   fi
 
+  # AWS session token assignment
+  if grep -qE 'AWS_SESSION_TOKEN[[:space:]]*=[[:space:]]*[^[:space:]]{16,}' "$FILE_PATH" 2>/dev/null; then
+    echo "[secret-scan] Potential AWS Session Token detected in $FILE_PATH"
+    exit 1
+  fi
+
   # Generic password assignment with actual value
-  if grep -qP '(password|secret|token)\s*[:=]\s*["\x27][^"\x27]{8,}["\x27]' "$FILE_PATH" 2>/dev/null; then
+  if grep -qE "(password|secret|token)[[:space:]]*[:=][[:space:]]*[\"'][^\"']{8,}[\"']" "$FILE_PATH" 2>/dev/null; then
     # Exclude known safe patterns
-    if ! grep -qP '(steampipe|example|placeholder|XXXXX|REGION|ACCOUNT|process\.env)' "$FILE_PATH" 2>/dev/null; then
+    if ! grep -qE '(steampipe|example|placeholder|XXXXX|REGION|ACCOUNT|process\.env)' "$FILE_PATH" 2>/dev/null; then
       echo "[secret-scan] Potential secret detected in $FILE_PATH"
       exit 1
     fi
