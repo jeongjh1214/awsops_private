@@ -35,7 +35,10 @@ class PrivateConfigTests(unittest.TestCase):
                 "toolTimeoutMs": 30000,
                 "queryCacheTtlSec": 300,
                 "maxToolResultBytes": 200000
-            }
+            },
+            "queryPolicy": {
+                "enabledServices": ["ec2", "s3", "iam"]
+            },
         })
 
         cfg = load_private_config(path)
@@ -44,6 +47,7 @@ class PrivateConfigTests(unittest.TestCase):
         self.assertEqual(cfg.environment.bedrock_profile, "bedrock-dev")
         self.assertEqual(cfg.environment.endpoint_urls["sts"], "https://vpce-sts.example")
         self.assertEqual(cfg.agent.provider, "local-mcp-langgraph")
+        self.assertEqual(cfg.enabled_query_services, ("ec2", "s3", "iam"))
 
     def test_missing_bedrock_profile_fails(self):
         path = self.write_config({

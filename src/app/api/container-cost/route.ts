@@ -1,6 +1,7 @@
 // Container Cost API: ECS task metadata + CloudWatch Container Insights metrics
 // 컨테이너 비용 API: ECS Task 메타데이터 + CloudWatch Container Insights 메트릭
 import { NextRequest, NextResponse } from 'next/server';
+import { isQueryServiceEnabled } from '@/lib/query-policy';
 import { execFileSync } from 'child_process';
 import { runQuery } from '@/lib/steampipe';
 import { getConfig, getAccountById, validateAccountId } from '@/lib/app-config';
@@ -99,6 +100,10 @@ function getContainerInsightsMetrics(
 }
 
 export async function GET(request: NextRequest) {
+  if (!isQueryServiceEnabled('ecs') || !isQueryServiceEnabled('cost')) {
+    return NextResponse.json({ error: 'ECS container cost is disabled by queryPolicy' }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'summary';
   const accountIdParam = searchParams.get('accountId') || undefined;

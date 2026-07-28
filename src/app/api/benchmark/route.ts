@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { execSync, exec } from 'child_process';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { validateAccountId, getAccountById, isMultiAccount } from '@/lib/app-config';
+import { validateAccountId, getAccountById, getConfig, isMultiAccount } from '@/lib/app-config';
 
 const RESULTS_DIR = '/tmp/powerpipe-results';
 const MOD_DIR = '/home/ec2-user/awsops/powerpipe';
@@ -58,6 +58,13 @@ export async function GET(request: NextRequest) {
   const errorFile = join(RESULTS_DIR, `${benchmark}${fileSuffix}.err`);
 
   if (action === 'run') {
+    if (getConfig().queryPolicy?.allowComplianceBenchmark !== true) {
+      return NextResponse.json(
+        { error: 'Compliance benchmark is disabled by queryPolicy' },
+        { status: 403 },
+      );
+    }
+
     // Start benchmark in background
     if (existsSync(statusFile)) {
       const status = readFileSync(statusFile, 'utf-8').trim();

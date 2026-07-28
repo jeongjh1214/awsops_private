@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFileSync } from 'child_process';
 import { getAccountById, validateAccountId } from '@/lib/app-config';
+import { isQueryServiceEnabled } from '@/lib/query-policy';
 
 const REGION = 'ap-northeast-2';
 const ARN_PATTERN = /^arn:aws:kafka:[a-z0-9-]+:\d{12}:cluster\/[a-zA-Z0-9._-]+\/[a-z0-9-]+$/;
@@ -53,6 +54,10 @@ function buildMetricQueries(clusterName: string, brokerIds: number[]): any[] {
 }
 
 export async function GET(request: NextRequest) {
+  if (!isQueryServiceEnabled('msk')) {
+    return NextResponse.json({ error: 'MSK is disabled by queryPolicy' }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
   const clusterArn = searchParams.get('clusterArn');

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { runQuery } from '@/lib/steampipe';
 import { queries } from '@/lib/queries/eks-container-cost';
 import { getConfig, validateAccountId } from '@/lib/app-config';
+import { isQueryServiceEnabled } from '@/lib/query-policy';
 
 // Parse K8s CPU (e.g. "8" -> 8, "500m" -> 0.5, "1000m" -> 1)
 // K8s CPU 파싱 (예: "8" -> 8, "500m" -> 0.5)
@@ -58,6 +59,10 @@ function getNodeHourlyRate(instanceType: string | null): number {
 }
 
 export async function GET(request: NextRequest) {
+  if (!isQueryServiceEnabled('eks') || !isQueryServiceEnabled('cost')) {
+    return NextResponse.json({ error: 'EKS container cost is disabled by queryPolicy' }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'summary';
   const accountIdParam = searchParams.get('accountId') || undefined;

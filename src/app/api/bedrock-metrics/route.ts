@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { execFileSync } from 'child_process';
 import { getStats } from '@/lib/agentcore-stats';
 import { getAccountById, validateAccountId } from '@/lib/app-config';
+import { isQueryServiceEnabled } from '@/lib/query-policy';
 
 const REGION = 'ap-northeast-2';
 
@@ -72,6 +73,10 @@ const RANGE_CONFIGS: Record<string, { hours: number; period: number }> = {
 };
 
 export async function GET(request: NextRequest) {
+  if (!isQueryServiceEnabled('bedrock')) {
+    return NextResponse.json({ error: 'Bedrock metrics are disabled by queryPolicy' }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'summary';
   const range = searchParams.get('range') || '24h';

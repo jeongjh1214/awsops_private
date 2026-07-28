@@ -33,6 +33,12 @@ import { queries as mskQ } from '@/lib/queries/msk';
 import { queries as osQ } from '@/lib/queries/opensearch';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useAccountContext } from '@/contexts/AccountContext';
+import {
+  DEFAULT_ENABLED_QUERY_SERVICES,
+  filterQueryRecordByPolicy,
+  normalizeEnabledQueryServices,
+  type QueryService,
+} from '@/lib/query-policy-shared';
 
 
 interface DashboardData {
@@ -60,7 +66,13 @@ export default function DashboardPage() {
   const [costAvailable, setCostAvailable] = useState<boolean | null>(null);
   const [cacheStatus, setCacheStatus] = useState<any>(null);
   const [agentProvider, setAgentProvider] = useState<string | null>(null);
+  const [enabledQueryServices, setEnabledQueryServices] = useState<QueryService[]>(DEFAULT_ENABLED_QUERY_SERVICES);
+  const [allowComplianceBenchmark, setAllowComplianceBenchmark] = useState(false);
   const isLocalPrivateAgent = agentProvider === 'local-mcp-langgraph';
+  const serviceEnabled = useCallback(
+    (service: QueryService) => enabledQueryServices.includes(service),
+    [enabledQueryServices],
+  );
 
   const fetchData = useCallback(async (bustCache = false) => {
     setLoading(true);
@@ -72,7 +84,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           accountId: currentAccountId,
           saveInventory: true,
-          queries: {
+          queries: filterQueryRecordByPolicy({
             ec2Status: ec2Q.statusCount,
             ec2Types: ec2Q.typeDistribution,
             s3Summary: s3Q.summary,
@@ -83,13 +95,16 @@ export default function DashboardPage() {
             cwSummary: cwQ.summary,
             ecsSummary: ecsQ.summary,
             dynamoSummary: dynamoQ.summary,
-            ...(costAvailable !== false ? {
+            ...(costAvailable !== false && serviceEnabled('cost') ? {
               costSummary: costQ.summary,
               costDetail: costQ.dashboardDetail,
             } : {}),
-            k8sNodes: k8sQ.nodeSummary,
-            k8sPods: k8sQ.podSummary,
-            k8sDeploy: k8sQ.deploymentSummary,
+            ...(serviceEnabled('eks') ? {
+              k8sNodes: k8sQ.nodeSummary,
+              k8sPods: k8sQ.podSummary,
+              k8sDeploy: k8sQ.deploymentSummary,
+              k8sWarnings: k8sQ.warningEvents,
+            } : {}),
             secSummary: secQ.summary,
             ecacheSummary: ecacheQ.summary,
             ctSummary: ctQ.summary,
@@ -99,15 +114,14 @@ export default function DashboardPage() {
             ebsSummary: ebsQ.summary,
             mskSummary: mskQ.summary,
             osSummary: osQ.summary,
-            k8sWarnings: k8sQ.warningEvents,
-          },
+          }, enabledQueryServices),
         }),
       });
       setData(await res.json());
       // Refresh cache status after data load / 데이터 로드 후 캐시 상태 갱신
       fetch('/awsops/api/steampipe?action=cache-status').then(r => r.json()).then(d => setCacheStatus(d)).catch(() => {});
     } catch {} finally { setLoading(false); }
-  }, [costAvailable, currentAccountId, isLocalPrivateAgent]);
+  }, [costAvailable, currentAccountId, enabledQueryServices, isLocalPrivateAgent, serviceEnabled]);
 
   // Cost Explorer 가용성 선 확인 / Pre-check cost availability
   useEffect(() => {
@@ -123,8 +137,16 @@ export default function DashboardPage() {
       .catch(() => {});
     fetch('/awsops/api/steampipe?action=config')
       .then(r => r.json())
-      .then(d => setAgentProvider(d.agent?.provider || 'agentcore'))
-      .catch(() => setAgentProvider('local-mcp-langgraph'));
+      .then(d => {
+        setAgentProvider(d.agent?.provider || 'agentcore');
+        setEnabledQueryServices(normalizeEnabledQueryServices(d.queryPolicy?.enabledServices));
+        setAllowComplianceBenchmark(d.queryPolicy?.allowComplianceBenchmark === true);
+      })
+      .catch(() => {
+        setAgentProvider('local-mcp-langgraph');
+        setEnabledQueryServices(DEFAULT_ENABLED_QUERY_SERVICES);
+        setAllowComplianceBenchmark(false);
+      });
   }, [currentAccountId]);
 
   // cost-check 완료 후 fetchData 실행 / Run fetchData after cost-check resolves
@@ -231,29 +253,33 @@ export default function DashboardPage() {
       <div>
         <h2 className="text-xs font-mono uppercase text-gray-400 tracking-wider mb-3">{t('dashboard.computeContainers')}</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <CardLink href="/ec2">
+          {serviceEnabled('ec2') && <CardLink href="/ec2">
             <StatsCard label={t('dashboard.ec2Label')} value={totalEC2} icon={Server} color="cyan"
               change={t('dashboard.ec2Change', { running: Number(running?.value) || 0, stopped: totalEC2 - (Number(running?.value) || 0) })} />
-          </CardLink>
-          <CardLink href="/lambda">
+          </CardLink>}
+          {serviceEnabled('lambda') && <CardLink href="/lambda">
             <StatsCard label={t('dashboard.lambdaLabel')} value={Number(lambda?.total_functions) || 0} icon={Zap} color="purple"
               change={t('dashboard.lambdaChange', { runtimes: Number(lambda?.unique_runtimes) || 0, longTimeout: Number(lambda?.long_timeout_functions) || 0 })} />
-          </CardLink>
+          </CardLink>}
+          {serviceEnabled('ecs') && <CardLink href="/ecs">
+            <StatsCard label={t('sidebar.ecs')} value={Number(ecs?.total_clusters) || 0} icon={Container} color="green"
+              change={`${Number(ecs?.total_services) || 0} services · ${Number(ecs?.running_tasks) || 0} tasks`} />
+          </CardLink>}
           {agentProvider === 'agentcore' && (
             <CardLink href="/agentcore">
               <StatsCard label={t('dashboard.agentcoreLabel')} value="8 GW" icon={Container} color="orange"
                 change={t('dashboard.agentcoreChange')} />
             </CardLink>
           )}
-          <CardLink href="/ecr">
+          {serviceEnabled('ecr') && <CardLink href="/ecr">
             <StatsCard label={t('dashboard.ecrLabel')} value={Number(ecrSum?.total_repos) || 0} icon={Package} color="green"
               change={t('dashboard.ecrChange', { scan: Number(ecrSum?.scan_enabled) || 0, immutable: Number(ecrSum?.immutable_tags) || 0 })} />
-          </CardLink>
-          <CardLink href="/k8s">
+          </CardLink>}
+          {serviceEnabled('eks') && <CardLink href="/k8s">
             <StatsCard label={t('dashboard.eksLabel')} value={Number(k8sNodes?.total_nodes) || 0} icon={Box} color="pink"
               change={t('dashboard.eksChange', { ready: Number(k8sNodes?.ready_nodes) || 0, pods: totalPods, deploy: Number(k8sDeploy?.total_deployments) || 0 })} />
-          </CardLink>
-          {agentProvider === 'agentcore' && (
+          </CardLink>}
+          {agentProvider === 'agentcore' && serviceEnabled('cloudfront') && (
             <CardLink href="/cloudfront-cdn">
               <StatsCard label={t('dashboard.cloudfrontLabel')} value={Number(cf?.total_distributions) || 0} icon={Globe} color="cyan"
                 change={t('dashboard.cloudfrontChange', { enabled: Number(cf?.enabled_count) || 0, http: Number(cf?.http_allowed) || 0 })} />
@@ -266,42 +292,42 @@ export default function DashboardPage() {
       <div>
         <h2 className="text-xs font-mono uppercase text-gray-400 tracking-wider mb-3">{t('dashboard.networkStorage')}</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-4">
-          <CardLink href="/vpc">
+          {serviceEnabled('vpc') && <CardLink href="/vpc">
             <StatsCard label={t('dashboard.vpcsLabel')} value={Number(vpc?.vpc_count) || 0} icon={Network} color="orange"
               change={t('dashboard.vpcsChange', { subnets: vpc?.subnet_count || 0, nat: Number(vpc?.nat_gateway_count) || 0, tgw: Number(vpc?.tgw_count) || 0 })} />
-          </CardLink>
-          <CardLink href="/waf">
+          </CardLink>}
+          {serviceEnabled('waf') && <CardLink href="/waf">
             <StatsCard label={t('dashboard.wafLabel')} value={Number(waf?.total_web_acls) || 0} icon={Shield} color="purple"
               change={t('dashboard.wafChange', { rules: Number(waf?.total_rule_groups) || 0, ipSets: Number(waf?.total_ip_sets) || 0 })} />
-          </CardLink>
-          <CardLink href="/ebs">
+          </CardLink>}
+          {serviceEnabled('ebs') && <CardLink href="/ebs">
             <StatsCard label={t('dashboard.ebsLabel')} value={Number(ebs?.total_volumes) || 0} icon={HardDrive} color="cyan"
               change={t('dashboard.ebsChange', { size: Number(ebs?.total_size_gb) || 0, unenc: Number(ebs?.unencrypted_count) || 0 })} />
-          </CardLink>
-          <CardLink href="/s3">
+          </CardLink>}
+          {serviceEnabled('s3') && <CardLink href="/s3">
             <StatsCard label={t('dashboard.s3Label')} value={Number(s3?.total_buckets) || 0} icon={Database} color="green"
               change={pubBuckets > 0 ? t('dashboard.s3ChangePublic', { public: pubBuckets, private: Number(s3?.total_buckets) - pubBuckets }) : t('dashboard.s3ChangePrivate')} />
-          </CardLink>
-          <CardLink href="/rds">
+          </CardLink>}
+          {serviceEnabled('rds') && <CardLink href="/rds">
             <StatsCard label={t('dashboard.rdsLabel')} value={Number(rds?.total_instances) || 0} icon={Database} color="cyan"
               change={t('dashboard.rdsChange', { storage: Number(rds?.total_storage_gb) || 0, multiAz: Number(rds?.multi_az_count) || 0 })} />
-          </CardLink>
-          <CardLink href="/dynamodb">
+          </CardLink>}
+          {serviceEnabled('dynamodb') && <CardLink href="/dynamodb">
             <StatsCard label={t('dashboard.dynamoLabel')} value={Number(dynamo?.total_tables) || 0} icon={Table} color="purple"
               change={Number(dynamo?.total_tables) > 0 ? t('dashboard.dynamoChange') : undefined} />
-          </CardLink>
-          <CardLink href="/elasticache">
+          </CardLink>}
+          {serviceEnabled('elasticache') && <CardLink href="/elasticache">
             <StatsCard label={t('dashboard.elasticacheLabel')} value={Number(ecache?.total_clusters) || 0} icon={Database} color="orange"
               change={t('dashboard.elasticacheChange', { redis: Number(ecache?.redis_count) || 0, memcached: Number(ecache?.memcached_count) || 0, nodes: Number(ecache?.total_nodes) || 0 })} />
-          </CardLink>
-          <CardLink href="/opensearch">
+          </CardLink>}
+          {serviceEnabled('opensearch') && <CardLink href="/opensearch">
             <StatsCard label={t('dashboard.opensearchLabel')} value={Number(os?.total_domains) || 0} icon={Search} color="purple"
               change={t('dashboard.opensearchChange', { vpc: Number(os?.vpc_domains) || 0, encrypted: Number(os?.node_encrypted) || 0 })} />
-          </CardLink>
-          <CardLink href="/msk">
+          </CardLink>}
+          {serviceEnabled('msk') && <CardLink href="/msk">
             <StatsCard label={t('dashboard.mskLabel')} value={Number(msk?.total_clusters) || 0} icon={Radio} color="green"
               change={t('dashboard.mskChange', { active: Number(msk?.active_clusters) || 0 })} />
-          </CardLink>
+          </CardLink>}
         </div>
       </div>
 
@@ -314,20 +340,20 @@ export default function DashboardPage() {
               color={totalIssues > 0 ? 'red' : 'green'} highlight
               change={totalIssues > 0 ? secDetails : `✓ ${t('dashboard.allClear')}`} />
           </CardLink>
-          <CardLink href="/iam">
+          {serviceEnabled('iam') && <CardLink href="/iam">
             <StatsCard label={t('dashboard.iamUsers')} value={Number(iam?.total_users) || 0} icon={Shield} color="purple"
               change={`${t('dashboard.iamChange', { roles: Number(iam?.total_roles) || 0, groups: Number(iam?.total_groups) || 0 })}${Number(iam?.mfa_not_enabled) > 0 ? ` · ${t('dashboard.iamNoMfa', { count: iam.mfa_not_enabled })}` : ''}`} />
-          </CardLink>
-          <CardLink href="/cloudwatch">
+          </CardLink>}
+          {serviceEnabled('cloudwatch') && <CardLink href="/cloudwatch">
             <StatsCard label={t('dashboard.cwAlarms')} value={Number(cw?.alarm_count) || 0} icon={Bell}
               color={Number(cw?.alarm_count) > 0 ? 'red' : 'green'}
               change={t('dashboard.cwChange', { metrics: Number(cw?.metric_count) || 0, logGroups: Number(cw?.log_group_count) || 0 })} />
-          </CardLink>
-          <CardLink href="/cloudtrail">
+          </CardLink>}
+          {serviceEnabled('cloudtrail') && <CardLink href="/cloudtrail">
             <StatsCard label={t('dashboard.cloudtrailLabel')} value={`${Number(ct?.total_trails) || 0} ${t('dashboard.trails')}`} icon={FileSearch} color="cyan"
               change={t('dashboard.cloudtrailChange', { active: Number(ct?.active_trails) || 0, multiRegion: Number(ct?.multi_region_trails) || 0, validated: Number(ct?.log_validated_trails) || 0 })} />
-          </CardLink>
-          <CardLink href="/compliance">
+          </CardLink>}
+          {allowComplianceBenchmark && <CardLink href="/compliance">
             {(() => {
               const cisOk = Number(cisSummary?.ok) || 0;
               const cisAlarm = Number(cisSummary?.alarm) || 0;
@@ -343,8 +369,8 @@ export default function DashboardPage() {
                   change={passRate ? t('dashboard.cisChange', { alarm: cisAlarm, skip: cisSkip, error: cisError }) : t('dashboard.cisRunBenchmark')} />
               );
             })()}
-          </CardLink>
-          <CardLink href={costAvailable === false ? '/inventory' : '/cost'}>
+          </CardLink>}
+          {serviceEnabled('cost') && <CardLink href={costAvailable === false ? '/inventory' : '/cost'}>
             {(() => {
               if (costAvailable === false) {
                 return (
@@ -363,7 +389,7 @@ export default function DashboardPage() {
                   change={`$${daily.toFixed(0)}/${t('dashboard.costChange').includes('/일') ? '일' : 'day'} · ${t('cost.lastMonth')} $${lastM.toLocaleString()} · ${Number(mom) > 0 ? '+' : ''}${mom}% MoM`} />
               );
             })()}
-          </CardLink>
+          </CardLink>}
         </div>
       </div>
 
@@ -392,7 +418,7 @@ export default function DashboardPage() {
         <PieChartCard title={t('dashboard.ec2InstanceTypes')} data={get('ec2Types').map((r: any) => ({ name: String(r.name), value: Number(r.value) || 0 })).slice(0, 8)} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {serviceEnabled('eks') && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <PieChartCard title={t('dashboard.k8sPodStatus')} data={[
           { name: t('common.running'), value: Number(podSum?.running_pods) || 0 },
           { name: t('common.pending'), value: Number(podSum?.pending_pods) || 0 },
@@ -422,7 +448,7 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Cache Warmer Status Bar / 캐시 워머 상태 바 */}
       {cacheStatus && (

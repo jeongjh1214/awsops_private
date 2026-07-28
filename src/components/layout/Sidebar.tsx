@@ -42,12 +42,18 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import {
+  DEFAULT_ENABLED_QUERY_SERVICES,
+  normalizeEnabledQueryServices,
+  type QueryService,
+} from '@/lib/query-policy-shared';
 
 interface NavItem {
   labelKey: string;
   href: string;
   icon: LucideIcon;
   subItems?: NavItem[];
+  requiredServices?: QueryService[];
 }
 
 interface NavGroup {
@@ -69,46 +75,46 @@ const navGroups: NavGroup[] = [
   {
     titleKey: 'sidebar.compute',
     items: [
-      { labelKey: 'sidebar.ec2', href: '/ec2', icon: Server },
-      { labelKey: 'sidebar.lambda', href: '/lambda', icon: Zap },
-      { labelKey: 'sidebar.ecs', href: '/ecs', icon: Container },
-      { labelKey: 'sidebar.ecr', href: '/ecr', icon: Package },
-      { labelKey: 'sidebar.eks', href: '/k8s', icon: Box },
-      { labelKey: 'sidebar.eksExplorer', href: '/k8s/explorer', icon: Terminal },
-      { labelKey: 'sidebar.ecsContainerCost', href: '/container-cost', icon: DollarSign },
-      { labelKey: 'sidebar.eksContainerCost', href: '/eks-container-cost', icon: DollarSign },
+      { labelKey: 'sidebar.ec2', href: '/ec2', icon: Server, requiredServices: ['ec2'] },
+      { labelKey: 'sidebar.lambda', href: '/lambda', icon: Zap, requiredServices: ['lambda'] },
+      { labelKey: 'sidebar.ecs', href: '/ecs', icon: Container, requiredServices: ['ecs'] },
+      { labelKey: 'sidebar.ecr', href: '/ecr', icon: Package, requiredServices: ['ecr'] },
+      { labelKey: 'sidebar.eks', href: '/k8s', icon: Box, requiredServices: ['eks'] },
+      { labelKey: 'sidebar.eksExplorer', href: '/k8s/explorer', icon: Terminal, requiredServices: ['eks'] },
+      { labelKey: 'sidebar.ecsContainerCost', href: '/container-cost', icon: DollarSign, requiredServices: ['ecs', 'cost'] },
+      { labelKey: 'sidebar.eksContainerCost', href: '/eks-container-cost', icon: DollarSign, requiredServices: ['eks', 'cost'] },
     ],
   },
   {
     titleKey: 'sidebar.networkCdn',
     items: [
-      { labelKey: 'sidebar.vpcNetwork', href: '/vpc', icon: Network },
-      { labelKey: 'sidebar.cloudfront', href: '/cloudfront-cdn', icon: Globe },
-      { labelKey: 'sidebar.waf', href: '/waf', icon: Shield },
-      { labelKey: 'sidebar.topology', href: '/topology', icon: GitBranch },
+      { labelKey: 'sidebar.vpcNetwork', href: '/vpc', icon: Network, requiredServices: ['vpc'] },
+      { labelKey: 'sidebar.cloudfront', href: '/cloudfront-cdn', icon: Globe, requiredServices: ['cloudfront'] },
+      { labelKey: 'sidebar.waf', href: '/waf', icon: Shield, requiredServices: ['waf'] },
+      { labelKey: 'sidebar.topology', href: '/topology', icon: GitBranch, requiredServices: ['eks'] },
     ],
   },
   {
     titleKey: 'sidebar.storageDb',
     items: [
-      { labelKey: 'sidebar.ebs', href: '/ebs', icon: HardDrive },
-      { labelKey: 'sidebar.s3', href: '/s3', icon: Database },
-      { labelKey: 'sidebar.s3Governance', href: '/s3-governance', icon: ClipboardCheck },
-      { labelKey: 'sidebar.rds', href: '/rds', icon: Database },
-      { labelKey: 'sidebar.dynamodb', href: '/dynamodb', icon: Table },
-      { labelKey: 'sidebar.elasticache', href: '/elasticache', icon: Database },
-      { labelKey: 'sidebar.opensearch', href: '/opensearch', icon: Search },
-      { labelKey: 'sidebar.msk', href: '/msk', icon: Radio },
+      { labelKey: 'sidebar.ebs', href: '/ebs', icon: HardDrive, requiredServices: ['ebs'] },
+      { labelKey: 'sidebar.s3', href: '/s3', icon: Database, requiredServices: ['s3'] },
+      { labelKey: 'sidebar.s3Governance', href: '/s3-governance', icon: ClipboardCheck, requiredServices: ['s3'] },
+      { labelKey: 'sidebar.rds', href: '/rds', icon: Database, requiredServices: ['rds'] },
+      { labelKey: 'sidebar.dynamodb', href: '/dynamodb', icon: Table, requiredServices: ['dynamodb'] },
+      { labelKey: 'sidebar.elasticache', href: '/elasticache', icon: Database, requiredServices: ['elasticache'] },
+      { labelKey: 'sidebar.opensearch', href: '/opensearch', icon: Search, requiredServices: ['opensearch'] },
+      { labelKey: 'sidebar.msk', href: '/msk', icon: Radio, requiredServices: ['msk'] },
     ],
   },
   {
     titleKey: 'sidebar.monitoring',
     items: [
-      { labelKey: 'sidebar.monitoringPage', href: '/monitoring', icon: Activity },
-      { labelKey: 'sidebar.bedrock', href: '/bedrock', icon: Sparkles },
-      { labelKey: 'sidebar.cloudwatch', href: '/cloudwatch', icon: Bell },
-      { labelKey: 'sidebar.cloudtrail', href: '/cloudtrail', icon: FileSearch },
-      { labelKey: 'sidebar.cost', href: '/cost', icon: DollarSign },
+      { labelKey: 'sidebar.monitoringPage', href: '/monitoring', icon: Activity, requiredServices: ['cloudwatch'] },
+      { labelKey: 'sidebar.bedrock', href: '/bedrock', icon: Sparkles, requiredServices: ['bedrock'] },
+      { labelKey: 'sidebar.cloudwatch', href: '/cloudwatch', icon: Bell, requiredServices: ['cloudwatch'] },
+      { labelKey: 'sidebar.cloudtrail', href: '/cloudtrail', icon: FileSearch, requiredServices: ['cloudtrail'] },
+      { labelKey: 'sidebar.cost', href: '/cost', icon: DollarSign, requiredServices: ['cost'] },
       { labelKey: 'sidebar.resourceInventory', href: '/inventory', icon: BarChart3 },
       { labelKey: 'sidebar.cloudAssets', href: '/assets', icon: Boxes },
       { labelKey: 'sidebar.datasources', href: '/datasources', icon: DatabaseZap, subItems: [
@@ -120,7 +126,7 @@ const navGroups: NavGroup[] = [
   {
     titleKey: 'sidebar.security',
     items: [
-      { labelKey: 'sidebar.iam', href: '/iam', icon: Users },
+      { labelKey: 'sidebar.iam', href: '/iam', icon: Users, requiredServices: ['iam'] },
       { labelKey: 'sidebar.securityPage', href: '/security', icon: ShieldCheck },
       { labelKey: 'sidebar.cisCompliance', href: '/compliance', icon: ShieldCheck },
       { labelKey: 'sidebar.identityAudit', href: '/identity-audit', icon: ClipboardCheck },
@@ -136,6 +142,8 @@ export default function Sidebar() {
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [customerLogoBg, setCustomerLogoBg] = useState<string>('dark'); // 'light' for white bg, 'dark' for transparent / 밝은 로고는 light, 어두운 로고는 dark
   const [agentProvider, setAgentProvider] = useState<string | null>(null);
+  const [enabledQueryServices, setEnabledQueryServices] = useState<QueryService[]>(DEFAULT_ENABLED_QUERY_SERVICES);
+  const [allowComplianceBenchmark, setAllowComplianceBenchmark] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
   const { getFeatures, isMultiAccount } = useAccountContext();
   const features = getFeatures();
@@ -144,7 +152,10 @@ export default function Sidebar() {
     fetch('/awsops/api/steampipe?action=config')
       .then(r => r.json())
       .then(d => {
-        setCostEnabled(d.costEnabled !== false);
+        const enabledServices = normalizeEnabledQueryServices(d.queryPolicy?.enabledServices);
+        setEnabledQueryServices(enabledServices);
+        setAllowComplianceBenchmark(d.queryPolicy?.allowComplianceBenchmark === true);
+        setCostEnabled(d.costEnabled !== false && enabledServices.includes('cost'));
         if (d.customerLogo) setCustomerLogo(d.customerLogo);
         if (d.customerName) setCustomerName(d.customerName);
         if (d.customerLogoBg) setCustomerLogoBg(d.customerLogoBg);
@@ -309,6 +320,12 @@ export default function Sidebar() {
             <div className="space-y-0.5">
               {group.items
                 .filter(item => {
+                  if (item.requiredServices?.some(service => !enabledQueryServices.includes(service))) {
+                    return false;
+                  }
+                  if (item.href === '/compliance' && !allowComplianceBenchmark) {
+                    return false;
+                  }
                   // Cost items: show if global costEnabled AND (single-account OR account has cost)
                   if (item.href === '/cost' || item.href === '/container-cost' || item.href === '/eks-container-cost') {
                     return costEnabled && (!isMultiAccount || features.costEnabled);
@@ -333,7 +350,7 @@ export default function Sidebar() {
 
       {/* Footer / 푸터 */}
       <div className="px-4 py-3 border-t border-navy-600 space-y-2">
-        <button
+        {enabledQueryServices.includes('cost') && <button
           onClick={() => {
             const next = !costEnabled;
             fetch('/awsops/api/steampipe?action=config', {
@@ -350,7 +367,7 @@ export default function Sidebar() {
           <DollarSign size={12} />
           <span>{t('sidebar.costToggle')} {costEnabled ? t('sidebar.costOn') : t('sidebar.costOff')}</span>
           <span className={`w-1.5 h-1.5 rounded-full ${costEnabled ? 'bg-accent-green' : 'bg-gray-600'}`} />
-        </button>
+        </button>}
         <p className="text-xs text-gray-600 font-mono">v{process.env.NEXT_PUBLIC_APP_VERSION || '1.8.0'}</p>
       </div>
     </aside>

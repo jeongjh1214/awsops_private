@@ -5,6 +5,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from agent.private_runtime.query_policy import (
+    DEFAULT_ENABLED_QUERY_SERVICES,
+    normalize_enabled_query_services,
+)
+
 
 VALID_ENDPOINT_MODES = {"explicit", "privateDns", "hybrid"}
 VALID_AGENT_PROVIDERS = {"agentcore", "local-mcp-langgraph"}
@@ -39,6 +44,7 @@ class PrivateConfig:
     active_environment_name: str
     environment: EnvironmentConfig
     agent: AgentConfig
+    enabled_query_services: tuple[str, ...] = DEFAULT_ENABLED_QUERY_SERVICES
 
 
 def _agent_config(raw: dict[str, Any]) -> AgentConfig:
@@ -94,4 +100,11 @@ def load_private_config(path: str | Path = "data/config.json") -> PrivateConfig:
         raise ValueError(f"activeEnvironment {active!r} not found in environments")
     env = _environment_config(active, environments[active])
     agent = _agent_config(data.get("agent") or {})
-    return PrivateConfig(active_environment_name=active, environment=env, agent=agent)
+    query_policy = data.get("queryPolicy") or {}
+    enabled_query_services = normalize_enabled_query_services(query_policy.get("enabledServices"))
+    return PrivateConfig(
+        active_environment_name=active,
+        environment=env,
+        agent=agent,
+        enabled_query_services=enabled_query_services,
+    )

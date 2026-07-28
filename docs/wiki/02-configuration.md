@@ -90,6 +90,35 @@ export KREW_API_KEY='...'
 
 API Key를 `data/config.json`, git, log에 남기지 않는다.
 
+## AWS Query Service allowlist
+
+```json
+{
+  "queryPolicy": {
+    "enabledServices": [
+      "ec2",
+      "lambda",
+      "ecs",
+      "vpc",
+      "ebs",
+      "s3",
+      "rds",
+      "dynamodb",
+      "elasticache",
+      "cloudwatch",
+      "iam"
+    ],
+    "allowComplianceBenchmark": false
+  }
+}
+```
+
+이 목록은 Dashboard, Cache Warmer, service page, AI Steampipe query에 공통 적용된다. 목록에 없는 AWS service query는 Steampipe 연결 전에 차단되고 관련 Sidebar 메뉴와 Dashboard card는 숨겨진다. Bedrock inference와 STS, IAM Identity Center 감사처럼 application 운영에 필요한 명시적 SDK 호출은 이 resource query allowlist와 별도로 관리한다.
+
+`allowComplianceBenchmark`는 Powerpipe CIS benchmark처럼 여러 AWS service를 폭넓게 조회하는 기능을 별도로 제어한다. 기본값은 `false`이며, `false`일 때 메뉴를 숨기고 benchmark 실행 API를 차단한다.
+
+설정을 변경한 뒤 Next.js application과 private agent를 재시작한다.
+
 ## Asset Inventory 설정
 
 ```json

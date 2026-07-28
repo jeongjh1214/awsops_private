@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { execFileSync } from 'child_process';
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
+import { isQueryServiceEnabled } from '@/lib/query-policy';
 
 const HOME = process.env.HOME || '/home/ec2-user';
 const K8S_SPC_PATH = resolve(HOME, '.steampipe/config/kubernetes.spc');
@@ -40,6 +41,10 @@ function addConnectionIfMissing(clusterName: string, contextArn: string) {
 
 // POST: Register kubeconfig + add Steampipe connection + restart Steampipe
 export async function POST(req: NextRequest) {
+  if (!isQueryServiceEnabled('eks')) {
+    return NextResponse.json({ error: 'EKS is disabled by queryPolicy' }, { status: 403 });
+  }
+
   try {
     const { clusterName, region } = await req.json();
 

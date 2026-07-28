@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFileSync } from 'child_process';
 import { getAccountById, validateAccountId } from '@/lib/app-config';
+import { isQueryServiceEnabled } from '@/lib/query-policy';
 
 const REGION = 'ap-northeast-2';
 const DOMAIN_PATTERN = /^[a-zA-Z0-9._-]+$/;
@@ -56,6 +57,10 @@ function buildMetricQueries(domainNames: string[]): any[] {
 }
 
 export async function GET(request: NextRequest) {
+  if (!isQueryServiceEnabled('opensearch')) {
+    return NextResponse.json({ error: 'OpenSearch is disabled by queryPolicy' }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const domainsParam = searchParams.get('domains');
   const accountIdParam = searchParams.get('accountId') || undefined;

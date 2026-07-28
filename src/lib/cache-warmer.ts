@@ -25,6 +25,8 @@ import { queries as ecrQ } from '@/lib/queries/ecr';
 import { queries as ebsQ } from '@/lib/queries/ebs';
 import { queries as mskQ } from '@/lib/queries/msk';
 import { queries as osQ } from '@/lib/queries/opensearch';
+import { getEnabledQueryServices, isQueryServiceEnabled } from '@/lib/query-policy';
+import { filterQueryRecordByPolicy } from '@/lib/query-policy-shared';
 // Monitoring queries removed from cache warmer — CloudWatch FDW causes pool exhaustion
 
 const WARM_INTERVAL_MS = 4 * 60 * 1000; // 4 minutes / 4분
@@ -70,7 +72,8 @@ export function getCacheWarmerStatus(): CacheWarmerStatus {
 // Dashboard queries (same as page.tsx) / 대시보드 쿼리 (page.tsx와 동일)
 function getDashboardQueries(includeCost: boolean, includeK8s: boolean = true): Record<string, string> {
   const includeCloudFront = !isLocalPrivateAgentEnabled();
-  return {
+  const includePolicyAllowedK8s = includeK8s && isQueryServiceEnabled('eks');
+  const queries = {
     ec2Status: ec2Q.statusCount,
     ec2Types: ec2Q.typeDistribution,
     s3Summary: s3Q.summary,
@@ -82,7 +85,7 @@ function getDashboardQueries(includeCost: boolean, includeK8s: boolean = true): 
     ecsSummary: ecsQ.summary,
     dynamoSummary: dynamoQ.summary,
     ...(includeCost ? { costSummary: costQ.summary, costDetail: costQ.dashboardDetail } : {}),
-    ...(includeK8s ? {
+    ...(includePolicyAllowedK8s ? {
       k8sNodes: k8sQ.nodeSummary,
       k8sPods: k8sQ.podSummary,
       k8sDeploy: k8sQ.deploymentSummary,
@@ -113,6 +116,7 @@ function getDashboardQueries(includeCost: boolean, includeK8s: boolean = true): 
     ecsClusterList: ecsQ.clusterList,
     ecsServiceList: ecsQ.serviceList,
   };
+  return filterQueryRecordByPolicy(queries, getEnabledQueryServices());
 }
 
 // Monitoring queries DISABLED — CloudWatch metric tables cause pg pool exhaustion
@@ -130,7 +134,7 @@ async function warmCache(): Promise<void> {
     const includeCost = costResult.available;
 
     // 2. Run dashboard queries / 대시보드 쿼리 실행
-    const dashQueries = getDashboardQueries(includeCost);
+    const dashQueries = getDashboardQueries(includeCost, isQueryServiceEnabled('eks'));
     status.dashboardQueries = Object.keys(dashQueries).length;
     await batchQuery(dashQueries);
 

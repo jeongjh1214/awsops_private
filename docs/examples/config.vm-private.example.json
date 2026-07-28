@@ -69,6 +69,22 @@
     "queryCacheTtlSec": 300,
     "maxToolResultBytes": 200000
   },
+  "queryPolicy": {
+    "enabledServices": [
+      "ec2",
+      "lambda",
+      "ecs",
+      "vpc",
+      "ebs",
+      "s3",
+      "rds",
+      "dynamodb",
+      "elasticache",
+      "cloudwatch",
+      "iam"
+    ],
+    "allowComplianceBenchmark": false
+  },
   "identityAudit": {
     "enabled": false,
     "region": "ap-northeast-2",

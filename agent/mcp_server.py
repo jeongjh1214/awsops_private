@@ -14,6 +14,7 @@ from mcp.server.fastmcp import FastMCP
 from agent.private_runtime.audit import AuditLogger
 from agent.private_runtime.config import load_private_config
 from agent.private_runtime.limits import RuntimeLimits
+from agent.private_runtime.query_policy import validate_query_services
 
 
 mcp = FastMCP("awsops-private")
@@ -67,6 +68,7 @@ async def health() -> dict[str, Any]:
         "activeEnvironment": config.active_environment_name,
         "agentProvider": config.agent.provider,
         "endpointMode": config.environment.endpoint_mode,
+        "enabledQueryServices": list(config.enabled_query_services),
     }
 
 
@@ -76,6 +78,7 @@ async def run_steampipe_query(sql: str, max_rows: int = 100) -> dict[str, Any]:
     status = "success"
     try:
         _select_only(sql)
+        validate_query_services(sql, config.enabled_query_services)
         _validate_max_rows(max_rows)
         async with limits.steampipe:
             def run_query():

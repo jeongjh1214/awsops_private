@@ -3,6 +3,7 @@ import { execFileSync } from 'child_process';
 import NodeCache from 'node-cache';
 import { getConfig, getAccounts, ALL_ACCOUNTS } from '@/lib/app-config';
 import type { AccountConfig } from '@/lib/app-config';
+import { isQueryServiceEnabled, validateQueryServicePolicy } from '@/lib/query-policy';
 
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
@@ -249,6 +250,7 @@ export async function runQuery<T = Record<string, unknown>>(
 
   try {
     validateQuery(sql);
+    validateQueryServicePolicy(sql);
     const searchPath = buildSearchPath(accountId);
 
     // Unified path: always acquire an explicit client so a client-side timeout can free the
@@ -313,6 +315,13 @@ export async function checkCostAvailability(
   bustCache = false,
   accountId?: string
 ): Promise<{ available: boolean; reason?: string; checkedAt?: string }> {
+  if (!isQueryServiceEnabled('cost')) {
+    return {
+      available: false,
+      reason: 'Cost service is disabled by queryPolicy',
+    };
+  }
+
   // 설치 시 판별된 config 확인 — MSP Payer면 쿼리 없이 즉시 반환
   const config = getConfig();
   if (!config.costEnabled) {

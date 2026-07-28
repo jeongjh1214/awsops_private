@@ -9,6 +9,7 @@ import { getConfig, saveConfig, validateAccountId, getAccounts, isMultiAccount }
 import type { AccountConfig } from '@/lib/app-config';
 import { getCacheWarmerStatus, ensureCacheWarmerStarted } from '@/lib/cache-warmer';
 import { getUserFromRequest } from '@/lib/auth-utils';
+import { isQueryServiceEnabled } from '@/lib/query-policy';
 
 const COST_QUERY_KEYS = ['monthlyCost', 'costSummary', 'dailyCost', 'serviceCost', 'costDetail'];
 
@@ -451,6 +452,10 @@ export async function POST(request: NextRequest) {
 
     // EKS Access Entry registration / EKS Access Entry 등록
     if (body.action === 'eks-register-access') {
+      if (!isQueryServiceEnabled('eks')) {
+        return NextResponse.json({ error: 'EKS is disabled by queryPolicy' }, { status: 403 });
+      }
+
       const { clusterName, region, principalArn } = body as { clusterName: string; region: string; principalArn: string };
       if (!clusterName || !principalArn) {
         return NextResponse.json({ error: 'clusterName and principalArn required' }, { status: 400 });

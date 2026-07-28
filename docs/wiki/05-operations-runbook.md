@@ -14,6 +14,7 @@ cp docs/examples/config.vm-private.example.json data/config.json
 - `environments.<active>.bedrockProfile`
 - `environments.<active>.identityCenterProfile`
 - `environments.<active>.endpointUrls`
+- `queryPolicy.enabledServices`
 - `accounts[]`
 - `assetInventory.supportedResourceTypes`
 - `identityAudit`

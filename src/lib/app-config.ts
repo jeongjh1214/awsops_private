@@ -1,5 +1,9 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
+import {
+  DEFAULT_ENABLED_QUERY_SERVICES,
+  type QueryPolicyConfig,
+} from './query-policy-shared';
 
 const CONFIG_PATH = resolve(process.cwd(), 'data/config.json');
 
@@ -168,6 +172,7 @@ export interface AppConfig {
   snsTopicArn?: string;               // SNS topic ARN for email notifications / 이메일 알림용 SNS 토픽 ARN
   notificationEmails?: string[];      // Mailing list for report/benchmark notifications / 리포트/벤치마크 알림 메일링 리스트
   notificationEnabled?: boolean;      // Enable auto-notification on report completion / 리포트 완료 시 자동 알림 활성화
+  queryPolicy?: QueryPolicyConfig;
   assetInventory?: AssetInventoryConfig;
   identityAudit?: IdentityAuditConfig;
 }
@@ -208,6 +213,10 @@ const DEFAULT_CONFIG: AppConfig = {
     toolTimeoutMs: 30000,
     queryCacheTtlSec: 300,
     maxToolResultBytes: 200000,
+  },
+  queryPolicy: {
+    enabledServices: [...DEFAULT_ENABLED_QUERY_SERVICES],
+    allowComplianceBenchmark: false,
   },
   assetInventory: DEFAULT_ASSET_INVENTORY_CONFIG,
   identityAudit: DEFAULT_IDENTITY_AUDIT_CONFIG,
