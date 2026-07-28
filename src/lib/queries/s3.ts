@@ -1,4 +1,18 @@
 export const queries = {
+  // Keep the initial inventory independent from per-bucket hydrate calls.
+  // Columns such as region, policy, encryption, and logging can require
+  // additional S3 APIs and must not make the bucket names disappear.
+  baseList: `
+    SELECT
+      account_id,
+      name,
+      creation_date
+    FROM
+      aws_s3_bucket
+    ORDER BY
+      creation_date DESC
+  `,
+
   summary: `
     SELECT
       COUNT(*) AS total_buckets,

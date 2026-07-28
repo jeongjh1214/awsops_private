@@ -240,6 +240,11 @@ try {
   const s3PageSource = readFileSync('src/app/s3/page.tsx', 'utf8');
   assert.match(s3PageSource, /\/awsops\/api\/steampipe/);
   assert.doesNotMatch(s3PageSource, /\/awsops\/api\/s3(?:['"`?])/);
+  assert.match(s3PageSource, /baseList:\s*s3Q\.baseList/);
+  assert.match(s3PageSource, /security details could not be loaded/);
+
+  const s3QuerySource = readFileSync('src/lib/queries/s3.ts', 'utf8');
+  assert.match(s3QuerySource, /baseList:\s*`[\s\S]*FROM\s+aws_s3_bucket/i);
 
   const assetsRouteSource = readFileSync('src/app/api/assets/route.ts', 'utf8');
   assert.doesNotMatch(assetsRouteSource, /s3-sdk-sync|listS3Buckets/);

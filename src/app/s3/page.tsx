@@ -8,7 +8,7 @@ import StatusBadge from '@/components/dashboard/StatusBadge';
 import PieChartCard from '@/components/charts/PieChartCard';
 import BarChartCard from '@/components/charts/BarChartCard';
 import DataTable from '@/components/table/DataTable';
-import { Database, X, Shield, Settings, Tag, Search, Users } from 'lucide-react';
+import { AlertTriangle, Database, X, Shield, Settings, Tag, Search, Users } from 'lucide-react';
 import { queries as s3Q } from '@/lib/queries/s3';
 import { useAccountContext } from '@/contexts/AccountContext';
 
@@ -28,20 +28,59 @@ export default function S3Page() {
   const [regionFilter, setRegionFilter] = useState('');
   const [publicFilter, setPublicFilter] = useState('');
   const [iamRoles, setIamRoles] = useState<any[]>([]);
+  const [loadError, setLoadError] = useState('');
+  const [loadWarning, setLoadWarning] = useState('');
 
   const fetchData = useCallback(async (bustCache = false) => {
     setLoading(true);
+    setLoadError('');
+    setLoadWarning('');
     try {
-      const res = await fetch(bustCache ? '/awsops/api/steampipe?bustCache=true' : '/awsops/api/steampipe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accountId: currentAccountId,
-          queries: { summary: s3Q.summary, list: s3Q.list, publicBuckets: s3Q.publicBuckets },
-        }),
-      });
-      setData(await res.json());
-    } catch {} finally { setLoading(false); }
+      const url = bustCache ? '/awsops/api/steampipe?bustCache=true' : '/awsops/api/steampipe';
+      const executeQueries = async (queries: Record<string, string>) => {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accountId: currentAccountId, queries }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || `S3 query failed (${res.status})`);
+        return result;
+      };
+
+      const baseResult = await executeQueries({ baseList: s3Q.baseList });
+      setData({ baseList: baseResult.baseList });
+      setLoading(false);
+
+      const baseError = baseResult.baseList?.error;
+      if (baseError) {
+        setLoadError(`S3 bucket query failed: ${baseError}`);
+      }
+
+      try {
+        const enrichmentResult = await executeQueries({ list: s3Q.list });
+        setData((current) => ({ ...current, list: enrichmentResult.list }));
+        const enrichmentError = enrichmentResult.list?.error;
+        if (enrichmentError && !baseError) {
+          setLoadWarning(`Bucket names are available, but security details could not be loaded: ${enrichmentError}`);
+        } else if (!enrichmentError && baseError) {
+          setLoadError('');
+          setLoadWarning(`The minimal bucket query failed, so enriched results are shown: ${baseError}`);
+        } else if (enrichmentError && baseError) {
+          setLoadError(`S3 bucket query failed: ${baseError}`);
+        }
+      } catch (err) {
+        if (!baseError) {
+          const message = err instanceof Error ? err.message : 'Failed to load S3 security details';
+          setLoadWarning(`Bucket names are available, but security details could not be loaded: ${message}`);
+        }
+      }
+    } catch (err) {
+      setData({});
+      setLoadError(err instanceof Error ? err.message : 'Failed to load S3 buckets');
+    } finally {
+      setLoading(false);
+    }
   }, [currentAccountId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -64,14 +103,23 @@ export default function S3Page() {
   };
 
   const get = (key: string) => data[key]?.rows || [];
-  const getFirst = (key: string) => get(key)[0] || {};
 
-  const summary = getFirst('summary') as any;
-  const list = get('list');
+  const baseList = get('baseList');
+  const enrichedList = get('list');
+  const list = (() => {
+    if (!baseList.length) return enrichedList;
+    const enrichedByBucket = new Map(
+      enrichedList.map((row: any) => [`${row.account_id || ''}:${row.name}`, row]),
+    );
+    return baseList.map((row: any) => ({
+      ...row,
+      ...(enrichedByBucket.get(`${row.account_id || ''}:${row.name}`) || {}),
+    }));
+  })();
 
-  const totalBuckets = Number(summary?.total_buckets) || 0;
-  const publicBuckets = Number(summary?.public_buckets) || 0;
-  const versioningEnabled = Number(summary?.versioning_enabled) || 0;
+  const totalBuckets = list.length;
+  const publicBuckets = list.filter((r: any) => r.bucket_policy_is_public === true).length;
+  const versioningEnabled = list.filter((r: any) => r.versioning_enabled === true).length;
   const loggingCount = list.filter((r: any) => r.logging_target).length;
   const renderTriState = (value: boolean | null | undefined) => {
     if (value === true) return <StatusBadge status="active" />;
@@ -136,6 +184,19 @@ export default function S3Page() {
   return (
     <div className="p-6 space-y-6 animate-fade-in">
       <Header title={t('s3.title')} subtitle={t('s3.subtitle')} onRefresh={() => fetchData(true)} />
+
+      {loadError && (
+        <div className="flex items-start gap-3 border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+          <span>{loadError}</span>
+        </div>
+      )}
+      {loadWarning && (
+        <div className="flex items-start gap-3 border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+          <span>{loadWarning}</span>
+        </div>
+      )}
 
       {loading && (
         <div className="w-full h-1 bg-navy-700 rounded-full overflow-hidden">
