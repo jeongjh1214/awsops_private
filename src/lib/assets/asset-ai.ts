@@ -148,7 +148,28 @@ export function detectLiveS3InventoryQuestion(question: string): boolean {
   const mentionsS3 = /\b(s3|bucket|buckets)\b/.test(normalized) || normalized.includes('버킷');
   if (!mentionsS3) return false;
 
-  return [
+  const documentationIntent = [
+    '모범 사례',
+    'best practice',
+    '사용법',
+    '사용 방법',
+    '설정 방법',
+    '생성 방법',
+    '만드는 법',
+    '개념',
+    '어떤 서비스',
+    '무슨 서비스',
+    '차이',
+    '요금',
+    '가격',
+    'naming convention',
+    '이름 규칙',
+    '정책 예시',
+    '코드 예제',
+  ].some((keyword) => normalized.includes(keyword));
+  if (documentationIntent) return false;
+
+  const inventoryIntent = [
     '목록',
     '리스트',
     '현황',
@@ -165,7 +186,28 @@ export function detectLiveS3InventoryQuestion(question: string): boolean {
     'status',
     'show',
     'inventory',
+    '어떤',
+    '정보',
+    '암호화',
+    '버전관리',
+    '버전 관리',
+    '퍼블릭',
+    'public',
+    'private',
+    '리전',
+    'region',
+    '생성일',
+    '정책',
+    'policy',
+    '로깅',
+    'logging',
+    'lifecycle',
+    '수명 주기',
   ].some((keyword) => normalized.includes(keyword));
+
+  // A bucket-specific question is normally asking about this account's live
+  // inventory. Plain "S3란?" questions remain documentation/general queries.
+  return inventoryIntent || normalized.includes('버킷') || /\bbuckets?\b/.test(normalized);
 }
 
 export function detectS3GovernanceConversation(messages: Array<{ role: string; content: string }>): boolean {

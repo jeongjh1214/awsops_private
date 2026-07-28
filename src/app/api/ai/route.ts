@@ -25,6 +25,7 @@ import type { DatasourceType } from '@/lib/app-config';
 import { queryDatasource } from '@/lib/datasource-client';
 import { detectDatasourceTypes, DATASOURCE_TYPES } from '@/lib/datasource-registry';
 import { DATASOURCE_QUERY_PROMPTS } from '@/lib/datasource-prompts';
+import { queries as s3Queries } from '@/lib/queries/s3';
 import { openAssetDb, openAssetDbReadOnly } from '@/lib/assets/asset-db';
 import {
   buildAssetInventoryContext,
@@ -627,6 +628,61 @@ async function queryAWS(sql: string, accountId?: string): Promise<{ data: string
   }
 }
 
+interface AwsDataQueryExecution {
+  sql: string | null;
+  queryResult: { data: string; rowCount: number; error?: string } | null;
+}
+
+interface AwsDataQueryHooks {
+  onQuery?: (sql: string, retry: boolean) => void;
+  onRetry?: () => void;
+}
+
+async function executeAwsDataQuery(
+  messages: Array<{role: string; content: string}>,
+  accountId?: string,
+  accountAlias?: string,
+  hooks: AwsDataQueryHooks = {},
+): Promise<AwsDataQueryExecution> {
+  let sql = await generateSQL(messages, accountId, accountAlias);
+  let queryResult: AwsDataQueryExecution['queryResult'] = null;
+  const attemptedSql = new Set<string>();
+
+  for (let attempt = 0; attempt < 2 && sql; attempt++) {
+    const normalizedSql = sql.trim();
+    attemptedSql.add(normalizedSql);
+    hooks.onQuery?.(normalizedSql, attempt > 0);
+    queryResult = await queryAWS(normalizedSql, accountId);
+    if (!queryResult.error) return { sql: normalizedSql, queryResult };
+
+    if (attempt === 0) {
+      hooks.onRetry?.();
+      const fixMessages = [
+        ...messages.slice(-4),
+        { role: 'assistant' as const, content: `I generated this SQL: ${normalizedSql}` },
+        { role: 'user' as const, content: `That SQL failed with error: ${queryResult.error}. Fix the SQL using only valid column names.` },
+      ];
+      sql = await generateSQL(fixMessages, accountId, accountAlias);
+    }
+  }
+
+  const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')?.content || '';
+  if (detectLiveS3InventoryQuestion(latestUserMessage)) {
+    // Reuse the same queries as the S3 screen. The lightweight base query keeps
+    // bucket names available even when an optional S3 hydrate API is restricted.
+    for (const fallbackSql of [s3Queries.list, s3Queries.baseList]) {
+      const normalizedSql = fallbackSql.trim();
+      if (attemptedSql.has(normalizedSql)) continue;
+      attemptedSql.add(normalizedSql);
+      hooks.onQuery?.(normalizedSql, true);
+      queryResult = await queryAWS(normalizedSql, accountId);
+      if (!queryResult.error) return { sql: normalizedSql, queryResult };
+    }
+  }
+
+  return { sql: sql?.trim() || null, queryResult };
+}
+
 async function generateDatasourceQuery(
   messages: Array<{role: string; content: string}>,
   dsType: DatasourceType,
@@ -1095,7 +1151,6 @@ export async function POST(request: NextRequest) {
     codeExecuting: isEn ? '⚡ Executing code...' : '⚡ 코드 실행 중...',
     sqlGenerating: isEn ? '📝 Generating SQL...' : '📝 SQL 생성 중...',
     sqlQuerying: (retry: boolean) => isEn ? `🔎 Running Steampipe query...${retry ? ' (retry)' : ''}` : `🔎 Steampipe 쿼리 실행 중...${retry ? ' (재시도)' : ''}`,
-    sqlFallback: isEn ? '⚠️ SQL failed, switching to AgentCore...' : '⚠️ SQL 실패, AgentCore로 전환...',
     multiCall: (count: number) => isEn ? `🤖 Calling ${count} Gateways in parallel...` : `🤖 ${count}개 Gateway 병렬 호출 중...`,
     multiCallProgress: (count: number, sec: number) => isEn ? `🤖 Running ${count} Gateways... (${sec}s)` : `🤖 ${count}개 Gateway 실행 중... (${sec}s)`,
     agentcoreCall: (display: string) => isEn ? `🤖 Calling ${display} tools...` : `🤖 ${display} 도구 호출 중...`,
@@ -1346,23 +1401,21 @@ export async function POST(request: NextRequest) {
         if (config.handler === 'sql') {
           send('status', { step: 'sql-generating', message: STATUS.sqlGenerating });
           const modelId = getAiModelId(modelKey);
-          let sql = await generateSQL(messages, accountId, account?.alias);
-          let queryResult: { data: string; rowCount: number; error?: string } | null = null;
-
-          for (let attempt = 0; attempt < 2 && sql; attempt++) {
-            send('status', { step: 'sql-querying', message: STATUS.sqlQuerying(attempt > 0), sql });
-            queryResult = await queryAWS(sql, accountId);
-            if (!queryResult.error) break;
-            if (attempt === 0) {
-              send('status', { step: 'sql-retrying', message: STATUS.sqlRetrying });
-              const fixMessages = [
-                ...messages.slice(-4),
-                { role: 'assistant' as const, content: `I generated this SQL: ${sql}` },
-                { role: 'user' as const, content: `That SQL failed with error: ${queryResult.error}. Fix the SQL using only valid column names.` },
-              ];
-              sql = await generateSQL(fixMessages, accountId, account?.alias);
-            }
-          }
+          const { sql, queryResult } = await executeAwsDataQuery(
+            messages,
+            accountId,
+            account?.alias,
+            {
+              onQuery: (attemptSql, retry) => {
+                send('status', {
+                  step: 'sql-querying',
+                  message: STATUS.sqlQuerying(retry),
+                  sql: attemptSql,
+                });
+              },
+              onRetry: () => send('status', { step: 'sql-retrying', message: STATUS.sqlRetrying }),
+            },
+          );
 
           if (sql && queryResult && !queryResult.error) {
             send('status', { step: 'analyzing', message: STATUS.analyzing(queryResult.rowCount) });
@@ -1390,7 +1443,14 @@ export async function POST(request: NextRequest) {
             controller.close();
             return;
           }
-          send('status', { step: 'sql-fallback', message: STATUS.sqlFallback });
+          const queryError = queryResult?.error || 'Bedrock did not generate a valid SELECT query';
+          send('error', {
+            error: `${isEn ? 'Steampipe query failed' : 'Steampipe 조회 실패'}: ${queryError}`,
+            route,
+            sql,
+          });
+          controller.close();
+          return;
         }
 
         // Handler: AgentCore Gateway — single or multi / AgentCore 게이트웨이 — 단일 또는 멀티
@@ -1592,19 +1652,7 @@ async function handleSingleRoute(
   // SQL handler / SQL 핸들러
   if (config.handler === 'sql') {
     const modelId = getAiModelId(modelKey);
-    let sql = await generateSQL(messages, accountId, accountAlias);
-    let queryResult: { data: string; rowCount: number; error?: string } | null = null;
-    for (let attempt = 0; attempt < 2 && sql; attempt++) {
-      queryResult = await queryAWS(sql, accountId);
-      if (!queryResult.error) break;
-      if (attempt === 0) {
-        const fixMessages = [...messages.slice(-4),
-          { role: 'assistant' as const, content: `I generated this SQL: ${sql}` },
-          { role: 'user' as const, content: `That SQL failed with error: ${queryResult.error}. Fix the SQL using only valid column names.` },
-        ];
-        sql = await generateSQL(fixMessages, accountId, accountAlias);
-      }
-    }
+    const { sql, queryResult } = await executeAwsDataQuery(messages, accountId, accountAlias);
     if (sql && queryResult && !queryResult.error) {
       const contextData = `\n\n--- LIVE AWS RESOURCE DATA (${queryResult.rowCount} rows) ---\nSQL: ${sql}\n\`\`\`json\n${queryResult.data}\n\`\`\``;
       const bedrockMessages = messages.slice(-10).map((m: any) => ({ role: m.role, content: m.content }));
@@ -1619,6 +1667,13 @@ async function handleSingleRoute(
       const result = JSON.parse(new TextDecoder().decode(response.body));
       return { content: result.content?.[0]?.text || '', via: `${config.display} (${queryResult.rowCount} rows)`, queriedResources: ['steampipe'] };
     }
+    const queryError = queryResult?.error || 'Bedrock did not generate a valid SELECT query';
+    return {
+      content: `실시간 AWS 데이터를 조회하지 못했습니다. Steampipe 오류: ${queryError}`,
+      via: 'Steampipe query failed',
+      queriedResources: ['steampipe'],
+      usedTools: sql ? [`steampipe failed: ${sql.match(/FROM\s+(\w+)/i)?.[1] || 'query'}`] : [],
+    };
   }
 
   // Datasource handler (non-streaming, for multi-route participation)

@@ -43,8 +43,11 @@ try {
   assert.equal(detectAssetInventoryQuestion('EC2 instance metadata options 상태 보여줘'), false);
   assert.equal(detectLiveS3InventoryQuestion('현재 S3 버킷 목록 보여줘'), true);
   assert.equal(detectLiveS3InventoryQuestion('How many S3 buckets are in this account?'), true);
+  assert.equal(detectLiveS3InventoryQuestion('암호화 안 된 버킷이 뭐야?'), true);
+  assert.equal(detectLiveS3InventoryQuestion('S3에서 어떤 버킷을 사용하고 있어?'), true);
   assert.equal(detectLiveS3InventoryQuestion('S3 관리대장에서 개인정보 포함 버킷 보여줘'), false);
   assert.equal(detectLiveS3InventoryQuestion('S3 bucket naming best practices'), false);
+  assert.equal(detectLiveS3InventoryQuestion('S3는 어떤 서비스야?'), false);
   assert.equal(detectS3GovernanceConversation([
     { role: 'user', content: 'S3 관리대장에서 개인정보 포함 버킷 보여줘' },
     { role: 'assistant', content: '저장된 S3 관리대장 기준입니다.' },
@@ -268,6 +271,8 @@ try {
   assert.match(routeSource, /openAssetDbReadOnly/);
   assert.match(routeSource, /ensureAssetDbMigrated\(\)/);
   assert.match(routeSource, /detectLiveS3InventoryQuestion\(latestUserMessage\)/);
+  assert.match(routeSource, /for \(const fallbackSql of \[s3Queries\.list, s3Queries\.baseList\]\)/);
+  assert.match(routeSource, /Steampipe 조회 실패/);
   assert.match(routeSource, /detectS3GovernanceConversation\(messages\)/);
   assert.match(routeSource, /buildAssetInventoryContext\(db, lastMessage, \{ accountId, limit: 150 \}\)/);
   assert.match(routeSource, /return analyzeAssetInventory\(messages, modelKey, accountId\)/);
