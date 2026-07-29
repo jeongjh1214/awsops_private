@@ -331,11 +331,13 @@ export default function S3GovernancePage() {
             <option value="">개인정보 전체</option>
             <option value="true">있음</option>
             <option value="false">없음</option>
+            <option value="unknown">알 수 없음</option>
           </select>
           <select value={filters.piiRetentionApplied} onChange={(event) => setFilter('piiRetentionApplied', event.target.value)} className={selectClassName}>
             <option value="">유효기간 적용 전체</option>
             <option value="true">적용</option>
             <option value="false">미적용</option>
+            <option value="unknown">알 수 없음</option>
           </select>
           {hasFilters && (
             <button onClick={clearFilters} className={secondaryButtonClassName}>

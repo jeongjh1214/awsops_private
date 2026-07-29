@@ -334,14 +334,43 @@ function inferS3GovernanceFilters(question: string): S3GovernanceFilters {
 
   if (
     normalized.includes('삭제')
-    || normalized.includes('누락')
-    || normalized.includes('missing')
     || normalized.includes('deleted')
+    || normalized.includes('미연결')
+    || normalized.includes('aws에 없음')
+    || normalized.includes('수집에서 누락')
+    || normalized.includes('missing bucket')
   ) {
     filters.active = false;
   }
 
-  if (
+  const unknownIntent = (
+    normalized.includes('알 수 없음')
+    || normalized.includes('알수 없음')
+    || normalized.includes('알수없음')
+    || normalized.includes('미확인')
+    || normalized.includes('unknown')
+    || normalized.includes('모름')
+    || normalized.includes('미입력')
+    || normalized.includes('누락')
+    || /\b(missing|unset|not set)\b/.test(normalized)
+  );
+  const mentionsPersonalInfo = (
+    normalized.includes('개인정보')
+    || /\bpii\b/.test(normalized)
+    || normalized.includes('personal info')
+  );
+  if (mentionsPersonalInfo && unknownIntent) {
+    filters.containsPersonalInfo = null;
+  } else if (
+    normalized.includes('개인정보 없음')
+    || normalized.includes('개인정보 없는')
+    || normalized.includes('개인정보가 없는')
+    || normalized.includes('개인정보 미포함')
+    || normalized.includes('no pii')
+    || normalized.includes('without personal info')
+  ) {
+    filters.containsPersonalInfo = false;
+  } else if (
     normalized.includes('개인정보 있음')
     || normalized.includes('개인정보 포함')
     || /\bpii\b/.test(normalized)
@@ -350,7 +379,9 @@ function inferS3GovernanceFilters(question: string): S3GovernanceFilters {
     filters.containsPersonalInfo = true;
   }
 
-  if (
+  if (normalized.includes('유효기간 인지') && unknownIntent) {
+    filters.piiRetentionAware = null;
+  } else if (
     normalized.includes('유효기간 인지 안')
     || normalized.includes('retention unaware')
   ) {
@@ -358,6 +389,11 @@ function inferS3GovernanceFilters(question: string): S3GovernanceFilters {
   }
 
   if (
+    (normalized.includes('유효기간 적용') || normalized.includes('적용 여부'))
+    && unknownIntent
+  ) {
+    filters.piiRetentionApplied = null;
+  } else if (
     normalized.includes('유효기간 적용 안')
     || normalized.includes('적용 안')
     || normalized.includes('미적용')

@@ -6,9 +6,9 @@ export interface S3GovernanceFilters {
   phase?: string;
   ownerTeam?: string;
   active?: boolean;
-  containsPersonalInfo?: boolean;
-  piiRetentionAware?: boolean;
-  piiRetentionApplied?: boolean;
+  containsPersonalInfo?: boolean | null;
+  piiRetentionAware?: boolean | null;
+  piiRetentionApplied?: boolean | null;
   q?: string;
   limit?: number;
   offset?: number;
@@ -492,9 +492,13 @@ function addBooleanFilter(
   params: Record<string, unknown>,
   column: string,
   paramName: string,
-  value?: boolean,
+  value?: boolean | null,
 ): void {
   if (value === undefined) return;
+  if (value === null) {
+    conditions.push(`${column} is null`);
+    return;
+  }
   conditions.push(`${column} = @${paramName}`);
   params[paramName] = value ? 1 : 0;
 }

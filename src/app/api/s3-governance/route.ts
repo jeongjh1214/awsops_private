@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       accountId: optionalString(searchParams.get('accountId')),
       phase: optionalString(searchParams.get('phase')),
       ownerTeam: optionalString(searchParams.get('ownerTeam')),
-      active: booleanParams.values.active,
+      active: booleanParams.values.active ?? undefined,
       containsPersonalInfo: booleanParams.values.containsPersonalInfo,
       piiRetentionAware: booleanParams.values.piiRetentionAware,
       piiRetentionApplied: booleanParams.values.piiRetentionApplied,
@@ -158,8 +158,8 @@ function parseNullableBooleanBodyField(
 function parseBooleanParams(
   searchParams: URLSearchParams,
   names: string[],
-): { values: Record<string, boolean | undefined>; error?: string } {
-  const values: Record<string, boolean | undefined> = {};
+): { values: Record<string, boolean | null | undefined>; error?: string } {
+  const values: Record<string, boolean | null | undefined> = {};
 
   for (const name of names) {
     const value = searchParams.get(name);
@@ -177,8 +177,15 @@ function parseBooleanParams(
       values[name] = false;
       continue;
     }
+    if (normalized === 'unknown' || normalized === 'null') {
+      if (name === 'active') {
+        return { values, error: 'active must be true or false' };
+      }
+      values[name] = null;
+      continue;
+    }
 
-    return { values, error: `${name} must be true or false` };
+    return { values, error: `${name} must be true, false, or unknown` };
   }
 
   return { values };

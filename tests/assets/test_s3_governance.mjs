@@ -173,6 +173,28 @@ try {
   assert.equal(getS3GovernanceRecord(db, '123456789012:customer-prod-bucket').account_name, 'Common Dev Alias');
   assert.equal(listS3GovernanceRecords(db, { accountId: '999999999999' }).total, 0);
 
+  result = listS3GovernanceRecords(db, { containsPersonalInfo: null });
+  assert.equal(result.total, 1);
+  assert.equal(result.rows[0].bucket_name, 'new-auto-bucket');
+
+  const unknownContext = buildS3GovernanceContext(
+    db,
+    'S3 버킷에 개인정보 유무가 알수 없음으로 되어있는 것 체크해줘',
+  );
+  assert.equal(unknownContext.filters.containsPersonalInfo, null);
+  assert.equal(unknownContext.total, 1);
+  assert.equal(unknownContext.rows[0].bucket_name, 'new-auto-bucket');
+
+  const missingContext = buildS3GovernanceContext(db, 'S3 개인정보 유무 미입력 버킷 알려줘');
+  assert.equal(missingContext.filters.containsPersonalInfo, null);
+  assert.equal(missingContext.filters.active, undefined);
+  assert.equal(missingContext.total, 1);
+
+  const noPersonalInfoContext = buildS3GovernanceContext(db, '개인정보 없는 S3 버킷 보여줘');
+  assert.equal(noPersonalInfoContext.filters.containsPersonalInfo, false);
+  assert.equal(noPersonalInfoContext.total, 1);
+  assert.equal(noPersonalInfoContext.rows[0].bucket_name, 'deleted-customer-bucket');
+
   const context = buildS3GovernanceContext(db, 'S3 관리대장에서 개인정보 포함 버킷 알려줘');
   assert.equal(context.filters.containsPersonalInfo, true);
   assert.equal(context.total, 1);
@@ -186,9 +208,11 @@ try {
   const listRouteSource = readFileSync('src/app/api/s3-governance/route.ts', 'utf8');
   assert.match(listRouteSource, /sanitizeCsvCell/);
   assert.match(listRouteSource, /Invalid boolean value for/);
+  assert.match(listRouteSource, /normalized === 'unknown'/);
   const detailRouteSource = readFileSync('src/app/api/s3-governance/[stableKey]/route.ts', 'utf8');
   assert.match(detailRouteSource, /Invalid boolean value for/);
   const pageSource = readFileSync('src/app/s3-governance/page.tsx', 'utf8');
+  assert.match(pageSource, /<option value="unknown">알 수 없음<\/option>/);
   assert.match(
     pageSource,
     /selectedKey\s*===\s*'__new__'[\s\S]{0,120}return/,
