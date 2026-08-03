@@ -5,8 +5,8 @@
 // ready-to-use adapters — one per registered, capability-matched datasource instance — instead of a
 // single hardcoded default ClickHouse instance.
 
-import type { Pool } from 'pg';
-import { ClickHouseOtelTraceSource, TempoTraceSource, MetricsCallsSource, type TraceSource } from '@/lib/trace-source';
+import type { PoolLike } from './local-sqlite-pool';
+import { ClickHouseOtelTraceSource, TempoTraceSource, MetricsCallsSource, type TraceSource } from './trace-source';
 
 interface GraphQueryRow {
   integration_id: number;
@@ -22,7 +22,7 @@ export interface GraphSources {
  *  bare default ClickHouseOtelTraceSource (the pre-registry behavior) when no ready row exists yet
  *  — a fresh environment before the first daily datasource_index run, or the query itself failing —
  *  so nothing regresses. Never throws. */
-export async function loadGraphSources(pool: Pool): Promise<GraphSources> {
+export async function loadGraphSources(pool: PoolLike): Promise<GraphSources> {
   let rows: GraphQueryRow[] = [];
   try {
     // JOIN against integrations as defense-in-depth against an orphan row (deleteDatasource() sweeps

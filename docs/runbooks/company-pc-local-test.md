@@ -75,6 +75,26 @@ export AWSOPS_PRIVATE_DB_PROVIDER=aurora
 
 or set `assetInventory.dbProvider` to `aurora` in the environment-specific runtime config.
 
+When `activeEnvironment` is `local` and neither `AURORA_ENDPOINT` nor `DATABASE_URL` is set, the web
+server uses the local SQLite DB at `assetInventory.sqlitePath` (default `data/awsops.db`). Set
+`AWSOPS_LOCAL_DB_PROVIDER=aurora` to force Aurora-style DB connection failures during stricter testing.
+
+Check which DB is active after login:
+
+```bash
+curl -i http://127.0.0.1:3000/api/db
+```
+
+For local SQLite, the response includes:
+
+```json
+{
+  "status": "ok",
+  "provider": "sqlite",
+  "inventory_resources": 0
+}
+```
+
 ## Configure Steampipe
 
 Create the Steampipe AWS connection:

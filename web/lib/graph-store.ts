@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Pool } from 'pg';
+import type { PoolLike } from './local-sqlite-pool';
 import { buildFlowGraph, type FlowInput, type FlowKind } from './flow-topology';
 import { buildInfraGraph, type Row } from './infra-topology';
 import type { TraceSource, TraceSpan, ServiceGraphCall } from './trace-source';
@@ -61,7 +61,7 @@ interface GEdge { source: string; target: string; rel: string; confidence: strin
 // the exception: an intentionally-empty build (source unavailable) MUST sweep its stale rows, so it
 // passes `allowEmpty = true`. Default false keeps the flow/infra guard verbatim (one writer, no
 // duplicate sweep). The sweep is ACCOUNT-scoped so one account's rebuild never wipes another's rows.
-async function writeGraph(pool: Pool, cls: string, lockKey: number, accountId: string, nodes: GNode[], edges: GEdge[], runId: string, allowEmpty = false) {
+async function writeGraph(pool: PoolLike, cls: string, lockKey: number, accountId: string, nodes: GNode[], edges: GEdge[], runId: string, allowEmpty = false) {
   if (nodes.length === 0 && !allowEmpty) return { nodes: 0, edges: 0 };
   const client = await pool.connect();
   try {
@@ -102,7 +102,7 @@ async function writeGraph(pool: Pool, cls: string, lockKey: number, accountId: s
 // Accounts present in inventory for the given types (undefined = all types). The host account is
 // stored as the 'self' sentinel by sync_lambda; member accounts appear as their 12-digit ids —
 // each gets its own materialized graph (topology tables are account-keyed since ADR-043).
-async function inventoryAccounts(pool: Pool, types?: string[]): Promise<string[]> {
+async function inventoryAccounts(pool: PoolLike, types?: string[]): Promise<string[]> {
   const r = types
     ? await pool.query(`SELECT DISTINCT account_id FROM inventory_resources WHERE resource_type = ANY($1)`, [types])
     : await pool.query(`SELECT DISTINCT account_id FROM inventory_resources`);
@@ -111,7 +111,7 @@ async function inventoryAccounts(pool: Pool, types?: string[]): Promise<string[]
 }
 
 // Step 1 — traffic-flow graph (class='flow'), materialized PER ACCOUNT (host = 'self' sentinel).
-export async function rebuildGraph(pool: Pool, runId: string = randomUUID()): Promise<{ nodes: number; edges: number }> {
+export async function rebuildGraph(pool: PoolLike, runId: string = randomUUID()): Promise<{ nodes: number; edges: number }> {
   const totals = { nodes: 0, edges: 0 };
   for (const account of await inventoryAccounts(pool, TYPES)) {
     const inv = await pool.query(
@@ -141,7 +141,7 @@ export async function rebuildGraph(pool: Pool, runId: string = randomUUID()): Pr
 }
 
 // Step 2 — resource-relationship graph (class='infra'), materialized PER ACCOUNT.
-export async function rebuildInfraGraph(pool: Pool, runId: string = randomUUID()): Promise<{ nodes: number; edges: number }> {
+export async function rebuildInfraGraph(pool: PoolLike, runId: string = randomUUID()): Promise<{ nodes: number; edges: number }> {
   const totals = { nodes: 0, edges: 0 };
   for (const account of await inventoryAccounts(pool)) {
     const inv = await pool.query(
@@ -192,7 +192,7 @@ export function resolveInfraRef(dbHost: string | undefined, infraNodes: InfraNod
 }
 
 export async function rebuildTraceGraph(
-  pool: Pool,
+  pool: PoolLike,
   sources: TraceSource[],
   runId: string = randomUUID(),
   metricsSources: MetricsCallsSourceLike[] = [],

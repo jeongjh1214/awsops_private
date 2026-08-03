@@ -1,5 +1,4 @@
 import { randomUUID } from 'crypto';
-import type { Pool, PoolClient } from 'pg';
 import { getPool } from '@/lib/db';
 import { getPrivateGovernanceDbProvider } from './private-db-provider';
 import { openPrivateSqliteDb, type PrivateSqliteDb } from './sqlite-db';
@@ -117,7 +116,9 @@ interface S3InventorySeedRow {
   bucket_name: string;
 }
 
-type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
+interface Queryable {
+  query<T = any>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>;
+}
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 1000;

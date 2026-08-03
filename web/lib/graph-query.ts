@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { PoolLike } from './local-sqlite-pool';
 
 // Recursive-CTE traversal over topology_edges (ADR-043). PG 17 CYCLE clause for cycle safety
 // + a hard depth backstop. Class-scoped (flow|infra). A per-hop LATERAL fan-out cap bounds hub
@@ -48,11 +48,11 @@ const clampDepth = (d?: number): number => {
   return Number.isFinite(n) ? Math.min(MAX_DEPTH, Math.max(1, n)) : MAX_DEPTH; // NaN/Infinity → MAX_DEPTH
 };
 
-export async function downstream(pool: Pool, id: string, opts?: { cls?: string; depth?: number; account?: string }): Promise<GraphReach[]> {
+export async function downstream(pool: PoolLike, id: string, opts?: { cls?: string; depth?: number; account?: string }): Promise<GraphReach[]> {
   const r = await pool.query(traversalSql('down'), [id, opts?.cls ?? 'flow', clampDepth(opts?.depth), opts?.account ?? 'self']);
   return r.rows as GraphReach[];
 }
-export async function upstream(pool: Pool, id: string, opts?: { cls?: string; depth?: number; account?: string }): Promise<GraphReach[]> {
+export async function upstream(pool: PoolLike, id: string, opts?: { cls?: string; depth?: number; account?: string }): Promise<GraphReach[]> {
   const r = await pool.query(traversalSql('up'), [id, opts?.cls ?? 'flow', clampDepth(opts?.depth), opts?.account ?? 'self']);
   return r.rows as GraphReach[];
 }
