@@ -1,455 +1,308 @@
-# AWSops 대시보드 v1.7.0
+# AWSops Dashboard
 
-> Steampipe, Next.js 14, Amazon Bedrock AgentCore 기반 AWS + Kubernetes 운영 대시보드
+[![GitHub stars](https://img.shields.io/github/stars/Atom-oh/awsops?style=flat&logo=github)](https://github.com/Atom-oh/awsops/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/Atom-oh/awsops?style=flat&logo=github)](https://github.com/Atom-oh/awsops/network/members)
+[![GitHub issues](https://img.shields.io/github/issues/Atom-oh/awsops)](https://github.com/Atom-oh/awsops/issues)
+[![License](https://img.shields.io/github/license/Atom-oh/awsops)](LICENSE)
+[![Version](https://img.shields.io/badge/version-v2.0.0-green.svg)](https://github.com/Atom-oh/awsops/releases)
+[![Last commit](https://img.shields.io/github/last-commit/Atom-oh/awsops)](https://github.com/Atom-oh/awsops/commits/main)
+[![PR Review](https://github.com/Atom-oh/awsops/actions/workflows/pr-review.yml/badge.svg)](https://github.com/Atom-oh/awsops/actions/workflows/pr-review.yml)
 
-실시간 AWS/K8s 리소스 모니터링, 네트워크 트러블슈팅, CIS 컴플라이언스 스캔, AI 기반 분석을 단일 대시보드에서 제공합니다.
+<a href="#english"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
+<a href="#korean"><img src="https://img.shields.io/badge/lang-한국어-red.svg" alt="Korean"></a>
 
-**현황**: 36 페이지 · 50 라우트 · 25 쿼리 파일 · 13 API 라우트 · 125 MCP 도구 (8 Gateway) · 17 컴포넌트
-
----
-
-## 아키텍처
-
-![AWSops Architecture](images/awsops_arch_01.png)
-
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                              Internet                                        │
-└─────────────────────────────────┬────────────────────────────────────────────┘
-                                  │
-                                  v
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  CloudFront (HTTPS)                                                          │
-│  ┌─ Lambda@Edge (us-east-1) ─────────────────────────────────────────────┐  │
-│  │  JWT cookie verification -> Cognito Hosted UI redirect or pass through│  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│  /awsops*       -> ALB:3000 (Dashboard)                                     │
-│  /*             -> ALB:80   (VSCode)                                        │
-│  Security: X-Custom-Secret header                                           │
-└─────────────────────────────────┬────────────────────────────────────────────┘
-                                  │
-                                  v
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  ALB (Internet-facing) — SG: CloudFront Prefix List (port 80-3000)           │
-│  Port 80 -> VSCode (8888)  |  Port 3000 -> Dashboard (3000)                 │
-└─────────────────────────────────┬────────────────────────────────────────────┘
-                                  │
-                                  v
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  EC2 (t4g.2xlarge, Private Subnet) — All services on single instance        │
-│                                       모든 서비스가 단일 인스턴스에서 실행     │
-│                                                                              │
-│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────────────┐  │
-│  │  Next.js :3000  │  │  Steampipe :9193 │  │  VSCode :8888             │  │
-│  │  (36 Pages)     │──│  (Embedded PG)   │  │  (code-server)            │  │
-│  │  (13 APIs)      │  │  aws / k8s / trivy│  │                           │  │
-│  └─────────────────┘  └──────────────────┘  └────────────────────────────┘  │
-│  ┌─────────────────┐  ┌──────────────────────────────────────────────────┐  │
-│  │  Powerpipe      │  │  Docker (빌드 전용, 실행은 AgentCore 서비스)   │  │
-│  │  CIS Benchmark  │  │  awsops-agent 이미지 빌드 → ECR 푸시          │  │
-│  └─────────────────┘  └──────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  v
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  Amazon Bedrock AgentCore (ap-northeast-2)                                   │
-│                                                                              │
-│  ┌─────────────┐  ┌──────────────────┐  ┌────────────────────────────────┐  │
-│  │  1 Runtime   │  │  8 Gateways     │  │  19 Lambda Targets            │  │
-│  │  (Strands)   │──│  125 MCP Tools  │──│  (boto3, read-only)           │  │
-│  └─────────────┘  └──────────────────┘  └────────────────────────────────┘  │
-│  ┌─────────────────────────────────┐                                        │
-│  │  Code Interpreter (Python)      │                                        │
-│  └─────────────────────────────────┘                                        │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+AWS + Kubernetes operations dashboard with real-time monitoring, a private CloudFront/Fargate edge, Aurora Serverless v2 state, and AI-powered diagnosis via Amazon Bedrock AgentCore. | 비공개 CloudFront/Fargate 엣지, Aurora Serverless v2 상태 저장, Amazon Bedrock AgentCore 기반 AI 진단을 갖춘 실시간 모니터링 AWS + Kubernetes 운영 대시보드입니다.
 
 ---
 
-## 기능
+<a id="english"></a>
 
-### 대시보드 페이지 (35개) / Dashboard Pages (35 pages)
+# English
 
-| Category | Page | Path | Features / 기능 |
-|----------|------|------|-----------------|
-| **Overview** | Dashboard | `/awsops` | 18 StatsCards, Live Resources, Charts, Warnings |
-| | AI Assistant | `/awsops/ai` | Claude Sonnet/Opus 4.6, SSE streaming, multi-route |
-| | AgentCore | `/awsops/agentcore` | Runtime status, 8 Gateways, 125 tools |
-| | Bedrock | `/awsops/bedrock` | Model usage, token costs, prompt caching, Account vs AWSops |
-| | Accounts | /awsops/accounts | Multi-account management, target account CRUD (admin only) |
-| **Compute** | EC2 | `/awsops/ec2` | Instances + detail panel |
-| | Lambda | `/awsops/lambda` | Functions, runtimes, memory/timeout |
-| | ECS | `/awsops/ecs` | Clusters, services, tasks |
-| | ECR | `/awsops/ecr` | Repositories, images, scan results |
-| | EKS Overview | `/awsops/k8s` | Clusters, nodes, pod summary |
-| | EKS Pods | `/awsops/k8s/pods` | Pod list, status, restart counts |
-| | EKS Nodes | `/awsops/k8s/nodes` | Node list, capacity, conditions |
-| | EKS Deployments | `/awsops/k8s/deployments` | Deployment list, replicas |
-| | EKS Services | `/awsops/k8s/services` | Service list, types, endpoints |
-| | EKS Explorer | `/awsops/k8s/explorer` | K9s-style terminal UI |
-| | ECS Container Cost | `/awsops/container-cost` | Fargate pricing, Container Insights metrics |
-| | EKS Container Cost | `/awsops/eks-container-cost` | OpenCost (CPU/Mem/Net/Storage/GPU) + request-based fallback |
-| **Network & CDN** | VPC / Network | `/awsops/vpc` | VPCs, Subnets, SGs, Route Tables, TGW, ELB, NAT, IGW + Resource Map |
-| | CloudFront | `/awsops/cloudfront-cdn` | Distributions, origins, behaviors |
-| | WAF | `/awsops/waf` | Web ACLs, rules, metrics |
-| | Topology | `/awsops/topology` | Infra Map + Graph / K8s Map (React Flow) |
-| **Storage & DB** | EBS | `/awsops/ebs` | Volumes, Snapshots, encryption, EC2 attachment mapping |
-| | S3 | `/awsops/s3` | Buckets, TreeMap, search, IAM analysis |
-| | RDS | `/awsops/rds` | Instances, SG chaining, metrics |
-| | DynamoDB | `/awsops/dynamodb` | Tables, capacity, indexes |
-| | ElastiCache | `/awsops/elasticache` | Clusters, SG, metrics |
-| **Monitoring** | Monitoring | `/awsops/monitoring` | CPU, Memory, Network, Disk I/O (date range) |
-| | CloudWatch | `/awsops/cloudwatch` | Alarms, state history |
-| | CloudTrail | `/awsops/cloudtrail` | Trails, events (read/write) |
-| | Cost Explorer | `/awsops/cost` | Period/service filter, daily/monthly breakdown, MSP auto-detect |
-| | Resource Inventory | `/awsops/inventory` | Resource count trends, cost impact estimation |
-| **Security** | IAM | `/awsops/iam` | Users, roles, trust policies |
-| | Security | `/awsops/security` | Public S3, Open SGs, Unencrypted EBS, CVE |
-| | CIS Compliance | `/awsops/compliance` | CIS v1.5~v4.0 benchmarks (431 controls) |
+## Overview
 
----
+AWSops v2 is a single-pane operations dashboard for AWS and Kubernetes, rebuilt as a Terraform-based MSA: a private edge (CloudFront VPC Origin → internal ALB → ECS Fargate), Cognito + Lambda@Edge auth, Aurora Serverless v2 persistent state, AgentCore section agents for live AWS queries, and an OOM-safe async worker tier. The previous v1 architecture (single EC2, CDK, embedded Steampipe) is being decommissioned per ADR-016 — see [docs/decisions/016-v1-decommission.md](docs/decisions/016-v1-decommission.md).
 
-## AI 어시스턴트
-
-### 10단계 라우트 분류
-
-The AI classifier analyzes user questions and routes them to 1-3 optimal gateways in parallel, then synthesizes the results.
-AI 분류기가 사용자 질문을 분석하여 1~3개의 최적 게이트웨이로 병렬 라우팅한 후 결과를 통합합니다.
+![AWSops v2 Architecture](images/awsops_arch_v2.png)
 
 ```
-User Question / 사용자 질문
-    |
-    |-- "Run code", "calculate"  --> Code --> Bedrock + Code Interpreter (Python sandbox)
-    |
-    |-- VPC, TGW, VPN, ENI      --> Network --> AgentCore Runtime (17 tools)
-    |
-    |-- EKS, ECS, Istio         --> Container --> AgentCore Runtime (24 tools)
-    |
-    |-- CDK, Terraform, CFn     --> IaC --> AgentCore Runtime (12 tools)
-    |
-    |-- DynamoDB, RDS, Cache    --> Data --> AgentCore Runtime (24 tools)
-    |
-    |-- IAM, SG, compliance     --> Security --> AgentCore Runtime (14 tools)
-    |
-    |-- CloudWatch, alarms, logs --> Monitoring --> AgentCore Runtime (16 tools)
-    |
-    |-- Cost, budget, savings   --> Cost --> AgentCore Runtime (9 tools)
-    |
-    |-- EC2, S3, Lambda list    --> AWS Data --> Steampipe SQL + Bedrock analysis
-    |
-    |-- General questions       --> General --> Ops Gateway (9 tools) + Bedrock fallback
+Internet -> CloudFront (TLS, Lambda@Edge Cognito auth) -> VPC Origin (https-only) -> internal ALB (HTTPS)
+  -> ECS Fargate: Next.js 14 thin-BFF :3000 (arm64, no basePath) -> Aurora Serverless v2 (PG 17.9, node-pg)
+  -> Amazon Bedrock AgentCore: Runtime (Strands) + 9 section Gateways + Memory + Code Interpreter
+  -> async workers: POST /api/jobs -> SQS -> Step Functions -> Lambda or Fargate worker
 ```
 
-### 모델
-- **Claude Sonnet 4.6** (`global.anthropic.claude-sonnet-4-6`) — Fast responses / 빠른 응답 (default)
-- **Claude Opus 4.6** (`global.anthropic.claude-opus-4-6-v1`) — Deep analysis / 심층 분석
+Stats: 21 pages, 65 API routes, 72 components (`web/`), 16 consolidated ADRs, Terraform-managed (`terraform/v2/foundation`, no CDK).
 
-### 8 AgentCore Gateways (125 MCP Tools)
+> **No public ALB.** The edge is fully private — CloudFront reaches the ALB only through a VPC Origin, and the ALB only accepts traffic from CloudFront's managed security group. v2's posture is a **read-only ops dashboard + AI diagnosis**: AWS-resource mutation and autonomous remediation are FROZEN by design (ADR-005) — infra changes stay with the operator's own IaC/Change Manager, with one narrowly-scoped exception for self-healing service restarts (ADR-015).
 
-| Gateway | Lambda Targets | Tools | Key Capabilities / 주요 기능 |
-|---------|---------------|-------|------------------------------|
-| **Network** | network-mcp, reachability, flowmonitor | 17 | VPC, TGW, VPN, ENI, Reachability Analyzer, Flow Logs |
-| **Container** | eks-mcp, ecs-mcp, istio-mcp | 24 | EKS cluster/node/pod, ECS service/task, Istio mesh |
-| **IaC** | iac-mcp, terraform-mcp | 12 | CloudFormation validate, CDK docs, Terraform modules |
-| **Data** | dynamodb-mcp, rds-mcp, valkey-mcp, msk-mcp | 24 | DynamoDB query, RDS Data API, ElastiCache, MSK Kafka |
-| **Security** | iam-mcp | 14 | IAM users/roles/policies, policy simulation, MFA |
-| **Monitoring** | cloudwatch-mcp, cloudtrail-mcp | 16 | Metrics, alarms, Log Insights, CloudTrail events |
-| **Cost** | cost-mcp | 9 | Cost Explorer, Pricing, Budgets, forecasts |
-| **Ops** | knowledge, core-mcp, steampipe-query | 9 | AWS docs, CLI execution, Steampipe SQL |
-| **Total** | **19 Targets** | **125** | |
+## Features
 
-### 주요 AI 기능
-- **Multi-route**: Classifier returns 1-3 routes, parallel gateway calls + synthesis / 1~3개 라우트 병렬 호출 + 결과 통합
-- **SSE streaming**: Real-time response delivery / 실시간 응답 전달
-- **Code Interpreter**: Python sandbox for calculations and visualizations / 계산 및 시각화용 Python 샌드박스
-- **Conversation history**: Context-aware follow-up questions / 대화 히스토리 기반 맥락 유지
+- **Resource inventory** -- EC2, EKS, Lambda, ECS clusters/tasks, ECR, storage/DB, network, and security groupings, derived from Aurora-persisted inventory snapshots (with an optional flag-gated Steampipe sync layer).
+- **AI assistant** -- Bedrock AgentCore Runtime (Strands agent) routes each question to 1-3 of 9 section gateways in parallel and synthesizes the result, with SSE streaming, AgentCore Memory (conversation history), and a Python Code Interpreter.
+- **CIS compliance** -- Powerpipe benchmark runs with history (`compliance_runs`/`compliance_results`), flag-gated.
+- **Cost and FinOps** -- Cost Explorer, Bedrock usage/spend tracking, and 14-day resource-trend charts on the dashboard.
+- **Async diagnosis and jobs** -- long-running work (AI diagnosis reports, compliance scans) is enqueued via `POST /api/jobs` to an SQS + Step Functions + Lambda/Fargate worker tier — the web tier never blocks on OOM-risk work.
+- **EKS onboarding** -- interactive `configure.mjs` flow grants the web task role an EKS Access Entry with view access, per cluster.
 
----
+### AI Gateways (Amazon Bedrock AgentCore)
 
-## 데이터 흐름
+9 section gateways are defined in Terraform (`ai.tf`); each is provisioned idempotently and routes to Lambda-backed MCP tools. **Only 2 of the 9 are live today** (the rest are flag-gated behind `agentcore_enabled`/`integrations_enabled`, default off) — the table below is the target shape, not the current deployed state.
 
-![AWSops Flow](images/flow.png)
+| Gateway | Capabilities | Status |
+|---------|--------------|--------|
+| network | VPC, ENI, reachability, flow logs, TGW, VPN, firewall | ✅ live (flow-monitor slice) |
+| security | IAM, policy simulation, CIS/benchmark | ✅ live (iam-mcp slice, 14 tools) |
+| container | EKS, ECS, Istio, Kubernetes | flag-gated |
+| data | DynamoDB, RDS/Aurora, ElastiCache, MSK, OpenSearch | flag-gated |
+| cost | Cost Explorer, forecast, budgets, container cost | flag-gated |
+| monitoring | CloudWatch, CloudTrail | flag-gated |
+| iac | CloudFormation, CDK, Terraform | flag-gated |
+| ops | Steampipe SQL listing/status/docs/inventory | flag-gated |
+| external-obs | External observability & integrations (Prometheus, ClickHouse, Notion) | flag-gated |
 
-```
-┌──────────┐     ┌─────────────────┐     ┌──────────────────────────────┐
-│ Browser  │     │ Next.js :3000   │     │ Steampipe (Embedded PG)     │
-│          │────>│ POST /awsops/   │────>│ :9193                        │
-│ 34 Pages │     │  api/steampipe  │     │                              │
-│ Charts   │     │ batchQuery()    │     │ |- aws (380+ tables)  -> AWS API
-│ Tables   │<────│ 3 sequential    │<────│ |- k8s (60+ tables)   -> K8s API
-│          │     │ 5min TTL cache  │     │ |- trivy              -> CVE DB
-└──────────┘     └─────────────────┘     └──────────────────────────────┘
-```
+Models: Claude Sonnet 5 (default), Opus 4.8 (deep analysis), Haiku 4.5 (fast/low-cost).
 
-| Path / 경로 | Data Source / 데이터 소스 | Response Time / 응답 시간 |
-|------|-----------|----------|
-| Dashboard pages | Steampipe pg Pool -> AWS API | ~2s (instant with cache) |
-| AI (AWS resources) | Steampipe + Bedrock Sonnet 4.6 | ~5s |
-| AI (network analysis) | AgentCore -> Gateway MCP -> Lambda | ~30-60s |
-| AI (code execution) | Bedrock + Code Interpreter | ~10s |
-| CIS Compliance | Powerpipe -> Steampipe -> AWS API | ~3-5min |
-| Data Analytics | DynamoDB/RDS/ElastiCache/MSK -> Data Gateway | ~10-30s |
-| Topology graph | Steampipe -> React Flow | ~2s |
+## Prerequisites
 
----
+- Terraform >= 1.15 (S3 native state locking via `use_lockfile`)
+- Node.js >= 18 (configurator TUI, migration scripts)
+- Docker with buildx (arm64 image builds)
+- AWS CLI configured with credentials for the target account
+- kubectl and a kubeconfig, if onboarding EKS clusters
 
-## 스크린샷
-
-### Dashboard / 대시보드
-![Dashboard](images/01.dashboard.png)
-
-### AI Assistant / AI 어시스턴트
-![AI Assistant](images/02.AI_Assitant.png)
-
-### EC2 Instances / EC2 인스턴스
-![EC2](images/03.ec2.png)
-
-### EKS Overview / EKS 개요
-![EKS](images/04.eks.png)
-
-### Cost Explorer / 비용 분석
-![Cost](images/05.cost.png)
-
----
-
-## 빠른 시작
-
-### 사전 요구사항
-- AWS Account (Admin access)
-- EC2 Instance (Amazon Linux 2023, t4g.2xlarge+)
-- AWS credentials configured
-- kubectl + kubeconfig (for K8s features / K8s 기능용)
-
-### 설치 (10단계)
+## Installation
 
 ```bash
-# Step 0: Deploy CDK infrastructure (run from local machine)
-# CDK 인프라 배포 (로컬 머신에서 실행)
-export VSCODE_PASSWORD='YourPassword'
-bash scripts/00-deploy-infra.sh
-#   -> cdk bootstrap + cdk deploy AwsopsStack
-#   -> VPC, EC2, ALB, CloudFront, SSM Endpoints
+# Clone the repository
+git clone https://github.com/Atom-oh/awsops.git
+cd awsops
 
-# Connect to EC2 via SSM / SSM으로 EC2 접속
-aws ssm start-session --target <instance-id>
+# Interactive TUI: choose new/existing VPC, domain, bucket, EKS clusters
+make configure          # -> terraform.tfvars + backend.hcl
 
-# Step 1-3: Install dashboard (inside EC2)
-# 대시보드 설치 (EC2 내부)
-cd /home/ec2-user/awsops
-bash scripts/install-all.sh        # 01->02->03->10 auto execution
+# Provision the foundation stack
+terraform -chdir=terraform/v2/foundation init -backend-config=backend.hcl
+terraform -chdir=terraform/v2/foundation plan -out tfplan
+terraform -chdir=terraform/v2/foundation apply tfplan
 
-# Step 4: EKS access setup (optional)
-# EKS 접근 설정 (선택사항)
-bash scripts/04-setup-eks-access.sh
+# Build + push the web image, roll ECS, wait for /api/health
+make deploy
 
-# Step 5: Cognito authentication
-# Cognito 인증 설정
-bash scripts/05-setup-cognito.sh
+# After apply: build/push the agent image, run the idempotent AgentCore provisioner
+make agentcore
 
-# Step 6: AgentCore AI (batch or individual)
-# AgentCore AI (일괄 또는 개별 실행)
-bash scripts/06-setup-agentcore.sh           # 6a->6b->6c->6d->6e batch
-  # Or run individually / 또는 개별 실행:
-  # bash scripts/06a-setup-agentcore-runtime.sh      # Runtime
-  # bash scripts/06b-setup-agentcore-gateway.sh      # Gateway
-  # bash scripts/06c-setup-agentcore-tools.sh        # Lambda + MCP (19 Lambdas, 8 Gateways)
-  # bash scripts/06d-setup-agentcore-interpreter.sh  # Code Interpreter
-  # bash scripts/06e-setup-agentcore-config.sh       # Runtime config
-
-# Step 8: Lambda@Edge -> CloudFront integration
-# Lambda@Edge -> CloudFront 연동
-bash scripts/08-setup-cloudfront-auth.sh
+# After apply with workers_enabled=true: build/push the worker image
+make workers
 ```
 
-### 운영
+## Usage
 
 ```bash
-bash scripts/09-start-all.sh    # Start + status + URLs
-bash scripts/10-stop-all.sh     # Stop all services
-bash scripts/11-verify.sh       # Health check
+make help              # list all available targets
+make migrate-status    # offline: app version + each pending migration's release
+DRY_RUN=1 make migrate  # preview pending DB migrations before applying
+make upgrade            # safe release upgrade: RDS snapshot -> migrate -> deploy
 ```
 
+## Configuration
+
+Runtime configuration is **flag-gated in Terraform** (`variables.tf`), all default `false` so a fresh `plan` is a no-op:
+
+| Flag | Gates |
+|------|-------|
+| `agentcore_enabled` | 21 of the AgentCore Lambda slices |
+| `integrations_enabled` | remaining 6 AgentCore Lambda slices |
+| `workers_enabled` | the async worker tier (SQS/SFN/Lambda/Fargate) |
+| `steampipe_enabled` | the Steampipe inventory-sync data layer |
+
+AgentCore's own config (runtime ARN, Memory ID, Code Interpreter ID) is written to SSM (`/ops/awsops-v2/agentcore/*`) by the provisioner and read by the web BFF at runtime — never passed via task-def `valueFrom` (avoids a startup race).
+
+## Project Structure
+
+```
+awsops/
+  web/                    # Next.js 14 thin-BFF: 21 pages, 65 API routes, 72 components
+  agent/                  # Strands Agent (Runtime source) + MCP Lambda tool sources
+  terraform/v2/foundation/  # single Terraform root: network, edge, auth, data, workload, ai, workers, eks
+  scripts/v2/             # configure/deploy/migrate/agentcore/workers tooling (all Node.js/Python)
+  tests/                  # repo-wide hook/structure tests + PR-review/Steampipe/ExternalId wiring checks
+  docs/                   # guides, runbooks, decisions/ (BASELINE.md + 16 consolidated ADRs)
+  docs-site/              # Docusaurus user guide (deployed separately)
+```
+
+## Testing
+
+```bash
+bash scripts/v2/merge-verify.sh   # Python pytest (scripts/v2 + agent) + web vitest + terraform validate
+bash tests/run-all.sh             # repo-wide hook/structure tests + agent Python unittests
+cd web && npx vitest run          # web unit tests only
+```
+
+## API Documentation
+
+The 65 API routes live under `web/app/api/`. Key routes: `health` (public), `stream` (SSE chat), `db` (Aurora ping), `jobs` (+`/[id]`, async job submission/status), `security`, `compliance`, `auth/login`. See the docs site for user-facing guidance and [docs/decisions/BASELINE.md](docs/decisions/BASELINE.md) for architectural decisions.
+
+## Contributing
+
+1. Fork the repository
+2. Create your branch (`git checkout -b feat/amazing-feature`)
+3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to the branch (`git push origin feat/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+Licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+## Contact
+
+- Maintainer: [Atom-oh](https://github.com/Atom-oh)
+- Issues: [github.com/Atom-oh/awsops/issues](https://github.com/Atom-oh/awsops/issues)
+
 ---
+
+<a id="korean"></a>
+
+# 한국어
+
+## 개요
+
+AWSops v2는 AWS와 Kubernetes를 위한 단일 화면 운영 대시보드로, Terraform 기반 MSA로 재구축되었습니다: 비공개 엣지(CloudFront VPC Origin → 내부 ALB → ECS Fargate), Cognito + Lambda@Edge 인증, Aurora Serverless v2 영속 상태, 라이브 AWS 조회를 수행하는 AgentCore 섹션 에이전트, OOM-안전 비동기 워커 계층으로 구성됩니다. 이전 v1 아키텍처(단일 EC2, CDK, 내장 Steampipe)는 ADR-016에 따라 폐기 진행 중입니다 — [docs/decisions/016-v1-decommission.md](docs/decisions/016-v1-decommission.md) 참조.
+
+![AWSops v2 Architecture](images/awsops_arch_v2.png)
+
+```
+Internet -> CloudFront (TLS, Lambda@Edge Cognito 인증) -> VPC Origin (https-only) -> 내부 ALB (HTTPS)
+  -> ECS Fargate: Next.js 14 thin-BFF :3000 (arm64, basePath 없음) -> Aurora Serverless v2 (PG 17.9, node-pg)
+  -> Amazon Bedrock AgentCore: Runtime (Strands) + 9 섹션 Gateway + Memory + Code Interpreter
+  -> 비동기 워커: POST /api/jobs -> SQS -> Step Functions -> Lambda 또는 Fargate 워커
+```
+
+현황: 21 페이지, 65 API 라우트, 72 컴포넌트(`web/`), 16개 통합 ADR, Terraform 관리(`terraform/v2/foundation`, CDK 없음).
+
+> **공개 ALB 없음.** 엣지는 완전히 비공개입니다 — CloudFront는 VPC Origin을 통해서만 ALB에 도달하고, ALB는 CloudFront 관리형 보안 그룹의 트래픽만 허용합니다. v2의 자세는 **read-only 운영 대시보드 + AI 진단**입니다: AWS 리소스 변경·자율 조치는 설계상 FROZEN(ADR-005) — 인프라 변경은 운영자 자신의 IaC/Change Manager가 담당하며, 자가치유 서비스 재시작 하나만 좁게 예외 허용됩니다(ADR-015).
+
+## 주요 기능
+
+- **리소스 인벤토리** -- EC2, EKS, Lambda, ECS 클러스터/태스크, ECR, 스토리지/DB, 네트워크, 보안 그룹핑을 Aurora에 저장된 인벤토리 스냅샷 기반으로 제공(선택적 flag-gated Steampipe sync 계층 포함).
+- **AI 어시스턴트** -- Bedrock AgentCore Runtime(Strands 에이전트)이 각 질문을 9개 섹션 게이트웨이 중 1~3개로 병렬 라우팅한 뒤 결과를 통합하며, SSE 스트리밍·AgentCore Memory(대화 히스토리)·Python Code Interpreter를 지원합니다.
+- **CIS 컴플라이언스** -- Powerpipe 벤치마크 실행 이력 관리(`compliance_runs`/`compliance_results`), flag-gated.
+- **비용 및 FinOps** -- Cost Explorer, Bedrock 사용량/비용 추적, 대시보드의 14일 리소스 트렌드 차트.
+- **비동기 진단·작업** -- AI 진단 리포트, 컴플라이언스 스캔 등 장시간 작업은 `POST /api/jobs`로 SQS + Step Functions + Lambda/Fargate 워커 계층에 큐잉 — 웹 티어는 OOM 위험 작업을 절대 직접 실행하지 않습니다.
+- **EKS 온보딩** -- 대화형 `configure.mjs` 플로우로 클러스터별 웹 태스크 역할에 view 권한 EKS Access Entry를 부여합니다.
+
+### AI 게이트웨이 (Amazon Bedrock AgentCore)
+
+Terraform(`ai.tf`)에 9개 섹션 게이트웨이가 정의되어 있으며, 각각 멱등하게 프로비저닝되어 Lambda 기반 MCP 도구로 라우팅됩니다. **현재 9개 중 2개만 live**입니다(나머지는 `agentcore_enabled`/`integrations_enabled` 플래그 뒤에 게이트, 기본 비활성) — 아래 표는 목표 형태이며 현재 배포 상태가 아닙니다.
+
+| Gateway | 주요 기능 | 상태 |
+|---------|-----------|------|
+| network | VPC, ENI, reachability, flow logs, TGW, VPN, firewall | ✅ live (flow-monitor 슬라이스) |
+| security | IAM, 정책 시뮬레이션, CIS/benchmark | ✅ live (iam-mcp 슬라이스, 14 도구) |
+| container | EKS, ECS, Istio, Kubernetes | flag-gated |
+| data | DynamoDB, RDS/Aurora, ElastiCache, MSK, OpenSearch | flag-gated |
+| cost | Cost Explorer, forecast, budgets, 컨테이너 비용 | flag-gated |
+| monitoring | CloudWatch, CloudTrail | flag-gated |
+| iac | CloudFormation, CDK, Terraform | flag-gated |
+| ops | Steampipe SQL listing/status/docs/inventory | flag-gated |
+| external-obs | 외부 옵저버빌리티 & 연동(Prometheus, ClickHouse, Notion) | flag-gated |
+
+모델: Claude Sonnet 5(기본), Opus 4.8(심층 분석), Haiku 4.5(빠르고 저렴).
+
+## 사전 요구 사항
+
+- Terraform >= 1.15 (S3 native state locking, `use_lockfile`)
+- Node.js >= 18 (구성 TUI, 마이그레이션 스크립트)
+- Docker with buildx (arm64 이미지 빌드)
+- 대상 계정 자격 증명이 설정된 AWS CLI
+- EKS 클러스터를 온보딩한다면 kubectl 및 kubeconfig
+
+## 설치 방법
+
+```bash
+# 저장소 복제
+git clone https://github.com/Atom-oh/awsops.git
+cd awsops
+
+# 대화형 TUI: VPC/도메인/버킷/EKS 클러스터 선택
+make configure          # -> terraform.tfvars + backend.hcl
+
+# foundation 스택 프로비저닝
+terraform -chdir=terraform/v2/foundation init -backend-config=backend.hcl
+terraform -chdir=terraform/v2/foundation plan -out tfplan
+terraform -chdir=terraform/v2/foundation apply tfplan
+
+# web 이미지 빌드+푸시, ECS 롤링, /api/health 대기
+make deploy
+
+# apply 이후: agent 이미지 빌드+푸시, 멱등 AgentCore provisioner 실행
+make agentcore
+
+# workers_enabled=true로 apply 이후: worker 이미지 빌드+푸시
+make workers
+```
+
+## 사용법
+
+```bash
+make help               # 사용 가능한 전체 타겟 목록
+make migrate-status     # 오프라인: 앱 버전 + 각 미적용 마이그레이션의 release
+DRY_RUN=1 make migrate  # DB 마이그레이션 적용 전 미리보기
+make upgrade             # 안전한 릴리스 업그레이드: RDS 스냅샷 -> migrate -> deploy
+```
+
+## 환경 설정
+
+런타임 설정은 **Terraform에서 flag-gated**(`variables.tf`)이며, 모두 기본값 `false`라 갓 받은 상태에서 `plan`은 no-op입니다:
+
+| Flag | 게이트 대상 |
+|------|-------------|
+| `agentcore_enabled` | AgentCore Lambda 슬라이스 21개 |
+| `integrations_enabled` | 나머지 AgentCore Lambda 슬라이스 6개 |
+| `workers_enabled` | 비동기 워커 계층(SQS/SFN/Lambda/Fargate) |
+| `steampipe_enabled` | Steampipe 인벤토리 sync 데이터 계층 |
+
+AgentCore 자체 설정(runtime ARN, Memory ID, Code Interpreter ID)은 provisioner가 SSM(`/ops/awsops-v2/agentcore/*`)에 기록하고 web BFF가 런타임에 읽습니다 — 시작 시 레이스를 피하기 위해 task-def `valueFrom`으로는 절대 전달하지 않습니다.
 
 ## 프로젝트 구조
 
 ```
 awsops/
-├── src/
-│   ├── app/                      # 35 pages + 13 API routes
-│   │   ├── page.tsx              # Dashboard home (18 StatsCards)
-│   │   ├── ai/                   # AI Assistant (SSE streaming)
-│   │   ├── ec2/                  # EC2 instances
-│   │   ├── lambda/               # Lambda functions
-│   │   ├── ecs/                  # ECS clusters/services
-│   │   ├── ecr/                  # ECR repositories
-│   │   ├── k8s/                  # EKS (overview, pods, nodes, deployments, services, explorer)
-│   │   ├── vpc/                  # VPC/Network (VPCs, Subnets, SGs, TGW, ELB, NAT, IGW)
-│   │   ├── cloudfront-cdn/       # CloudFront distributions
-│   │   ├── waf/                  # WAF Web ACLs
-│   │   ├── topology/             # Infra Map + K8s Map (React Flow)
-│   │   ├── ebs/                  # EBS volumes/snapshots (encryption, attachments)
-│   │   ├── s3/                   # S3 buckets (TreeMap, IAM)
-│   │   ├── rds/                  # RDS instances (SG chaining)
-│   │   ├── dynamodb/             # DynamoDB tables
-│   │   ├── elasticache/          # ElastiCache clusters
-│   │   ├── monitoring/           # CPU/Memory/Network/Disk (date range)
-│   │   ├── cloudwatch/           # CloudWatch alarms
-│   │   ├── cloudtrail/           # CloudTrail events
-│   │   ├── opensearch/            # OpenSearch 도메인 (domains, encryption, VPC, CW metrics)
-│   │   ├── msk/                  # MSK Kafka 클러스터 (brokers, CW metrics: CPU/Memory/Net)
-│   │   ├── container-cost/       # ECS Container Cost (Fargate pricing)
-│   │   ├── eks-container-cost/  # EKS Container Cost (OpenCost + request-based)
-│   │   ├── cost/                 # Cost Explorer (period/service, MSP auto-detect)
-│   │   ├── inventory/            # Resource Inventory (count trends, cost impact)
-│   │   ├── iam/                  # IAM users/roles
-│   │   ├── security/             # Security findings
-│   │   ├── compliance/           # CIS v1.5~v4.0 benchmarks
-│   │   └── api/                  # 13 API routes (ai, steampipe, auth, msk, rds, elasticache, opensearch, agentcore, code, benchmark, container-cost, eks-container-cost, bedrock-metrics)
-│   ├── components/               # 17 shared components (Sidebar, Charts, Table, K8s, AccountSelector, AccountBadge)
-│   ├── contexts/                # AccountContext (multi-account state)
-│   ├── lib/steampipe.ts          # pg Pool (NOT CLI) — max 5, 120s timeout, 5min cache
-│   ├── lib/resource-inventory.ts  # 리소스 인벤토리 스냅샷 (resource snapshots)
-│   ├── lib/cost-snapshot.ts      # Cost 데이터 스냅샷 (cost data fallback)
-│   ├── lib/app-config.ts         # 앱 설정 (app config: costEnabled)
-│   ├── lib/queries/              # 25 SQL query files (ec2, ebs, msk, opensearch, vpc, s3, rds, k8s, container-cost, eks-container-cost, bedrock...)
-│   └── types/aws.ts              # TypeScript type definitions
-├── agent/                        # Strands Agent 소스 (EC2에서 빌드 → ECR → AgentCore에서 실행)
-│   ├── agent.py                  # Main entrypoint with dynamic gateway selection
-│   ├── streamable_http_sigv4.py  # MCP StreamableHTTP with SigV4
-│   ├── Dockerfile                # Python 3.11-slim, arm64 (EC2에서 빌드, AgentCore Runtime에서 실행)
-│   └── lambda/                   # 19 Lambda source files + create_targets.py
-├── powerpipe/                    # CIS Benchmark mod
-├── infra-cdk/                    # CDK TypeScript (AwsopsStack, CognitoStack)
-│   └── lib/
-│       ├── awsops-stack.ts       # VPC, EC2, ALB, CloudFront
-│       └── cognito-stack.ts      # Cognito User Pool, Lambda@Edge
-├── scripts/                      # 17 install/ops scripts
-│   ├── 00-deploy-infra.sh        # Step 0: CDK infrastructure
-│   ├── 01-install-base.sh        # Step 1: Steampipe + Powerpipe
-│   ├── 02-setup-nextjs.sh        # Step 2: Next.js setup
-│   ├── 03-build-deploy.sh        # Step 3: Production build
-│   ├── 04-setup-eks-access.sh    # Step 4: EKS access entry
-│   ├── 05-setup-cognito.sh       # Step 5: Cognito auth
-│   ├── 06-setup-agentcore.sh     # Step 6: Wrapper (6a->6b->6c->6d->6e)
-│   ├── 06a~06e-setup-agentcore-* # Step 6a-6e: AgentCore (split)
-│   ├── 06f-setup-agentcore-memory.sh  # Step 6f: Memory Store (365-day retention)
-│   ├── 07-setup-opencost.sh            # Step 7: Prometheus + OpenCost (EKS cost)
-│   ├── 08-setup-cloudfront-auth.sh # Step 8: Lambda@Edge
-│   ├── 12-setup-multi-account.sh  # Step 12: Multi-account setup
-│   ├── 09-start-all.sh           # Start all services
-│   ├── 10-stop-all.sh            # Stop all services
-│   ├── 11-verify.sh              # Health check
-│   ├── install-all.sh            # Auto: 01->02->03->10
-│   └── ARCHITECTURE.md           # Full architecture documentation
-├── docs/                         # Guides + Troubleshooting
-│   ├── INSTALL_GUIDE.md
-│   ├── TROUBLESHOOTING.md
-│   └── decisions/                # Architecture Decision Records (ADR)
-├── .kiro/rules.md                # Kiro vibe-coding rules
-└── .amazonq/rules.md             # Amazon Q rules
+  web/                      # Next.js 14 thin-BFF: 21 페이지, 65 API 라우트, 72 컴포넌트
+  agent/                    # Strands Agent(Runtime 소스) + MCP Lambda 도구 소스
+  terraform/v2/foundation/  # 단일 Terraform 루트: network, edge, auth, data, workload, ai, workers, eks
+  scripts/v2/               # configure/deploy/migrate/agentcore/workers 도구(전부 Node.js/Python)
+  tests/                    # repo 전반의 hook/structure 테스트 + PR-review/Steampipe/ExternalId 배선 체크
+  docs/                     # 가이드, 런북, decisions/(BASELINE.md + 통합 ADR 16개)
+  docs-site/                # Docusaurus 사용자 가이드(별도 배포)
 ```
 
----
+## 테스트
 
-## 기술 스택
+```bash
+bash scripts/v2/merge-verify.sh   # Python pytest(scripts/v2 + agent) + web vitest + terraform validate
+bash tests/run-all.sh             # repo 전반 hook/structure 테스트 + agent Python unittest
+cd web && npx vitest run          # web 유닛 테스트만
+```
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS (dark navy theme), Recharts, React Flow |
-| Backend | Node.js 20, pg (PostgreSQL client), node-cache |
-| Data | Steampipe (embedded PostgreSQL, 380+ AWS tables, 60+ K8s tables), Powerpipe |
-| AI | Amazon Bedrock (Claude Sonnet/Opus 4.6, ap-northeast-2 global.*), AgentCore Runtime (Strands), 8 AgentCore Gateways (MCP), Code Interpreter |
-| Auth | Amazon Cognito (User Pool + Hosted UI), Lambda@Edge (JWT, Python 3.12) |
-| IaC | CDK TypeScript (`infra-cdk/`) — AwsopsStack, CognitoStack |
-| Container | Docker (arm64), ECR |
-| Serverless | 19 Lambda functions (Python 3.12, boto3) |
+## API 문서
 
----
+65개 API 라우트가 `web/app/api/`에 있습니다. 주요 라우트: `health`(공개), `stream`(SSE 채팅), `db`(Aurora ping), `jobs`(+`/[id]`, 비동기 작업 제출/상태), `security`, `compliance`, `auth/login`. 사용자 가이드는 docs site를, 아키텍처 결정은 [docs/decisions/BASELINE.md](docs/decisions/BASELINE.md)를 참고하세요.
 
-## 사용된 AWS 서비스
+## 기여 방법
 
-| Service | Region | Purpose / 용도 |
-|---------|--------|----------------|
-| EC2 (t4g.2xlarge) | ap-northeast-2 | All services hosting / 전체 서비스 호스팅 |
-| ALB | ap-northeast-2 | Load balancer / 로드밸런서 |
-| CloudFront | Global | CDN + HTTPS |
-| Cognito | ap-northeast-2 | User authentication / 사용자 인증 |
-| Lambda@Edge | us-east-1 | CloudFront auth / CloudFront 인증 |
-| Lambda (x19) | ap-northeast-2 | MCP tools (Network, Container, IaC, Data, Security, Monitoring, Cost, Ops) |
-| AgentCore Runtime | ap-northeast-2 | Strands AI Agent |
-| AgentCore Gateway (x8) | ap-northeast-2 | MCP tool routing / MCP 도구 라우팅 |
-| AgentCore Code Interpreter | ap-northeast-2 | Python Sandbox |
-| Bedrock (Sonnet/Opus 4.6) | ap-northeast-2 | AI models (global.* cross-region inference) |
-| ECR | ap-northeast-2 | Agent Docker image |
-| DynamoDB | ap-northeast-2 | Table data queries |
-| ElastiCache | ap-northeast-2 | Redis/Memcached cluster monitoring |
-| MSK | ap-northeast-2 | Kafka cluster monitoring |
-| SSM | ap-northeast-2 | EC2 access |
-| CDK (CloudFormation) | ap-northeast-2 | Infrastructure deployment (AwsopsStack) |
-| OpenCost + Prometheus | EKS cluster | Pod-level cost analysis (CPU/Mem/Net/Storage/GPU) |
+1. 저장소를 Fork 합니다
+2. 브랜치를 생성합니다 (`git checkout -b feat/amazing-feature`)
+3. 변경 사항을 커밋합니다 (`git commit -m 'feat: add amazing feature'`)
+4. 브랜치에 Push 합니다 (`git push origin feat/amazing-feature`)
+5. Pull Request를 엽니다
 
----
+## 라이선스
 
-## 인증
+MIT License로 배포됩니다. 자세한 내용은 [LICENSE](LICENSE)를 참고하세요.
 
-| Method | Component |
-|--------|-----------|
-| CloudFront -> Lambda@Edge | JWT cookie (1h TTL) |
-| Cognito Hosted UI | OAuth2 Authorization Code |
-| ALB | X-Custom-Secret header |
-| AgentCore Gateway | IAM Role |
+## 연락처
 
----
-
-## 알려진 이슈 및 해결법
-
-See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for details.
-자세한 내용은 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) 참조.
-
-| Issue / 이슈 | Solution / 해결법 |
-|-------|---------|
-| SCP blocks IAM/Lambda hydrate | `ignore_error_codes` + remove affected columns |
-| Steampipe CLI slow (4s/query) | Use pg Pool (0.006s/query) |
-| basePath not applied to fetch | Add `/awsops` prefix to all fetch URLs |
-| CloudTrail >60s timeout | Event tab lazy-load |
-| AgentCore arm64 only | `docker buildx --platform linux/arm64` |
-| PostgreSQL separate install? | Not needed -- embedded in Steampipe |
-| CloudFront CachePolicy TTL=0 + Header | Use managed `CACHING_DISABLED` |
-| ALB SG rule limit (CF prefix 120+) | Single rule with port range 80-3000 |
-| Gateway Target CLI inlinePayload error | Use Python/boto3 (`mcp.lambda` structure) |
-| Code Interpreter name hyphens | Underscores only (`[a-zA-Z][a-zA-Z0-9_]`) |
-| Istio resource queries | Use Steampipe K8s CRD tables (`kubernetes_custom_resource`) |
-| VPC Lambda Steampipe access | Place Lambda in VPC + allow SG inbound |
-
----
-
-## 문서
-
-- [ARCHITECTURE.md](scripts/ARCHITECTURE.md) — 전체 아키텍처 상세
-- [INSTALL_GUIDE.md](docs/INSTALL_GUIDE.md) — 설치 가이드
-- [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — 알려진 이슈 + 해결법
-- [CHANGELOG.md](CHANGELOG.md) — 변경 이력
-
----
-
-# AWSops Dashboard v1.7.0 (English)
-
-> AWS + Kubernetes Operations Dashboard — Steampipe, Next.js 14, Amazon Bedrock AgentCore
-
-Real-time AWS/K8s resource monitoring, network troubleshooting, CIS compliance scanning, and AI-powered analysis in a single dashboard.
-
-**Stats**: 36 pages · 50 routes · 25 query files · 13 API routes · 125 MCP tools (8 Gateways) · 17 components
-
-## Documentation
-
-- [ARCHITECTURE.md](scripts/ARCHITECTURE.md) — Full architecture details
-- [INSTALL_GUIDE.md](docs/INSTALL_GUIDE.md) — Installation guide
-- [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — Known issues + solutions
-- [CHANGELOG.md](CHANGELOG.md) — Changelog
-
----
-
-## License
-
-Apache-2.0
+- 메인테이너: [Atom-oh](https://github.com/Atom-oh)
+- 이슈: [github.com/Atom-oh/awsops/issues](https://github.com/Atom-oh/awsops/issues)

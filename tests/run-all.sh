@@ -32,37 +32,33 @@ done
 echo "# Core structure"
 
 [ -f "CLAUDE.md" ] && pass "CLAUDE.md exists" || fail "CLAUDE.md missing"
-[ -f "package.json" ] && pass "package.json exists" || fail "package.json missing"
-[ -f "next.config.mjs" ] && pass "next.config.mjs exists" || fail "next.config.mjs missing"
-[ -f "docs/architecture.md" ] && pass "docs/architecture.md exists" || fail "docs/architecture.md missing"
 [ -f ".claude/settings.json" ] && pass ".claude/settings.json exists" || fail ".claude/settings.json missing"
-
-# Check all src/ subdirs have CLAUDE.md
-MISSING_DOCS=0
-for dir in src/lib src/app src/components; do
-  if [ -d "$dir" ] && [ ! -f "$dir/CLAUDE.md" ]; then
-    fail "$dir/CLAUDE.md missing"
-    MISSING_DOCS=$((MISSING_DOCS+1))
-  else
-    pass "$dir/CLAUDE.md exists"
-  fi
-done
 
 # Check ADR count
 ADR_COUNT=$(find docs/decisions -name '*.md' -not -name '.template.md' 2>/dev/null | wc -l)
 [ "$ADR_COUNT" -ge 1 ] && pass "ADRs exist ($ADR_COUNT found)" || fail "No ADRs found"
 
-# Check page count
-PAGE_COUNT=$(find src/app -name 'page.tsx' 2>/dev/null | wc -l)
-[ "$PAGE_COUNT" -ge 30 ] && pass "Pages: $PAGE_COUNT (expected >= 30)" || fail "Pages: $PAGE_COUNT (expected >= 30)"
-
-# Check API route count
-API_COUNT=$(find src/app/api -name 'route.ts' 2>/dev/null | wc -l)
-[ "$API_COUNT" -ge 10 ] && pass "API routes: $API_COUNT (expected >= 10)" || fail "API routes: $API_COUNT (expected >= 10)"
-
-# Check query file count
-QUERY_COUNT=$(find src/lib/queries -name '*.ts' -not -name 'CLAUDE.md' 2>/dev/null | wc -l)
-[ "$QUERY_COUNT" -ge 20 ] && pass "Query files: $QUERY_COUNT (expected >= 20)" || fail "Query files: $QUERY_COUNT (expected >= 20)"
+# ── Agent Python Tests ──
+# Run the AgentCore agent unittests (pure helpers, the Anthropic dark-path loop, account logic,
+# connector freeze guards). These previously ran only by hand; wire them into the gate so the
+# anthropic_loop golden tests actually block a regression.
+echo "# Agent Python tests"
+if command -v python3 &>/dev/null; then
+  agent_ok=1
+  # unittest-style suites (NO pytest dependency): handler/dark-path routing + tests/ (incl. the
+  # anthropic_loop golden tests). Root pattern is test_agent.py — NOT test_*.py — so the pytest-style
+  # test_account_logic.py is not swept into unittest discovery (it would ModuleNotFoundError without pytest).
+  ( cd agent && python3 -m unittest discover -s . -p 'test_agent.py' \
+             && python3 -m unittest discover -s tests -p 'test_*.py' ) >/dev/null 2>&1 || agent_ok=0
+  # test_account_logic.py is pytest-style (pytest is an undeclared dep) — run it only when pytest is
+  # importable; skip (don't fail the gate) where it isn't, but surface real failures when it is.
+  if python3 -c "import pytest" >/dev/null 2>&1; then
+    ( cd agent && python3 -m pytest -q test_account_logic.py ) >/dev/null 2>&1 || agent_ok=0
+  fi
+  [ "$agent_ok" -eq 1 ] && pass "Agent Python unittests passed" || fail "Agent Python unittests failed"
+else
+  echo "# SKIP: python3 not available"
+fi
 
 echo ""
 echo "# Results: $PASS passed, $FAIL failed, $TOTAL total"

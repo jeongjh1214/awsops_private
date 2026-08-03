@@ -13,6 +13,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- v2 DB migration framework (`make migrate`) — collision-free **ULID** migration files, advisory-locked,
+  fail-loud (plain INSERT = PK violation, no silent `ON CONFLICT`), **version-stamped** (`app_version`
+  ledger column from each migration's `-- since:` header, else the deploying app version). Cumulative
+  ledger: upgrading from any prior release applies exactly the missing migrations (no version-pair scripts).
+  - `make migrate-status` — offline app version + each migration's declared release.
+  - `scripts/v2/upgrade.sh` (`make upgrade`) — safe release-upgrade wrapper: RDS snapshot → migrate
+    (auto one-time legacy INTEGER→TEXT bootstrap) → idempotency check → `make deploy`. PREVIEW unless `CONFIRM=go`.
+  - See `terraform/v2/foundation/migrations/README.md`.
+
+### Database migrations (since 2.0.0)
+
+- `opencost_config` — read-only OpenCost install config (cluster-scoped helm version/values)
+- `prevention_insights` — ADR-032 Phase 4 cross-incident proactive-prevention tier
+- `eks_registrations` — EKS runtime registration (in-app query onboarding; EventBridge auto-register)
+
+## [1.9.0] - 2026-05-27
+
+### Added
+
+- Event-driven pre-scaling — Phase 1+2 (ADR-010) ([#13](https://github.com/whchoi98/awsops/pull/13))
+  - New `/event-scaling` admin page: register events, collect historical CloudWatch metrics (ASG/RDS/MSK/EBS/ALB), Bedrock Sonnet 4.6 multi-phase warmup plan via `PLAN_JSON` marker, downloadable bash scripts per resource type (KEDA/HPA, Aurora reader, MSK partition expansion, ASG warm pool, EBS IOPS)
+  - **Review-then-run**: scripts are downloaded for operator review; the dashboard never executes mutating actions
+  - New API route `/api/event-scaling` (GET/POST/PUT/DELETE, admin-only)
+  - New SQL query file `event-scaling.ts` with CloudWatch GetMetricData batch + resource-state queries
+  - 3 new libraries: `event-scaling.ts` (data model + JSON persistence), `event-scaling-prompts.ts`, `event-scaling-scripts.ts`
+- ADR-029 (Proposed): Mutating Action Framework — gate model for any future write actions (ADR-010 Phase 3 dependency)
+- ADR-030 (Accepted): ECS Fargate + Aurora App State + Dual-Tier ECR
+  - **Phase 1 foundation** (this release): `AwsopsDataStack` CDK stack provisioning Aurora Serverless v2 PostgreSQL 15.5 (0.5–4 ACU, writer + reader, KMS-encrypted, IAM auth, private subnets), idempotent 7-table schema (`infra-cdk/data/schema.sql`), app-side pg Pool (`src/lib/db.ts`) with DSN/discrete env var resolution, and deploy script `scripts/13-deploy-aurora.sh` (deploy / schema / status / dsn subcommands)
+  - Gated behind `cdk deploy AwsopsDataStack -c enableAurora=true` — default-off, doesn't affect existing single-host deployments
+  - **Phase 1 dual-write** (next release): 7 source files will gain Aurora write alongside the current `data/*.json` write; reads stay on JSON until 7-day parity gate clears
+- AI code-review workflow ([#12](https://github.com/whchoi98/awsops/pull/12)) — automated PR reviews via GitHub Actions invoking Claude
+- Test coverage analysis and improvement plan ([#11](https://github.com/whchoi98/awsops/pull/11)) — `docs/TEST-COVERAGE-PLAN.md` with current gaps and prioritized targets
+
+### Fixed
+
+- Zombie connection cleanup hardened to survive Steampipe FDW hangs — uses a dedicated short-lived `Client` (not pool) so it works even when the pool is exhausted; threshold lowered to 90s for Cost Explorer / IAM summary FDW paths
+- CIS benchmark fails with `relation does not exist` in single-account mode — schema resolution fixed for non-aggregator setups
+- Benchmark parameter validated against allowlist before shell invocation (prevents command injection)
+- `global.anthropic.claude-sonnet-4-6` model ID used for alert diagnosis (was returning a 4xx with the regional ID)
+
+### Infrastructure
+
+- New CDK stack `AwsopsDataStack` (`infra-cdk/lib/awsops-data-stack.ts`) — opt-in via `enableAurora` context flag
+- `infra-cdk/data/schema.sql` is source-controlled (negation rule added to `.gitignore`)
+- 4 CDK stacks total: `AwsopsStack`, `AwsopsCognitoStack`, `AwsopsAgentCoreStack`, `AwsopsDataStack`
+
+### Documentation
+
+- ADR-029 (Proposed), ADR-030 (Accepted) — 2 new ADRs (29 → 30)
+- `docs/architecture.md` — Future: ECS Fargate + Aurora Migration section, data-layer description for Aurora
+
+## [1.8.1] - 2026-04-23
+
+### Added
+
+- Alert-triggered AI diagnosis pipeline (ADR-009): automatic root cause analysis from external alert sources ([#10](https://github.com/whchoi98/awsops/pull/10))
+  - Webhook endpoint (`/api/alert-webhook`) for CloudWatch Alarms (SNS), Prometheus Alertmanager, Grafana Alerting, SQS, and generic webhooks
+  - Alert correlation engine: groups related alerts into incidents (30s buffer, time/service/resource matching, dedup, severity escalation)
+  - Investigation orchestrator: auto-selects collectors + datasource queries based on alert context, change detection (CloudTrail + K8s rollouts)
+  - Bedrock Sonnet root cause analysis with structured output (timeline, remediation, prevention)
+  - `AlertContext` scopes collector queries to firing alert's services/resources/namespaces (±10min window)
+  - Slack notification client (Block Kit, severity-based channel routing, thread updates for webhook + bot modes, resolved state)
+  - Knowledge base with monthly summary persistence (`data/alert-diagnosis/summary-YYYY-MM.json`) and past incident similarity search
+  - SQS background poller, Alert Settings admin page (`/alert-settings`)
+  - HMAC-SHA256 webhook authentication and rate limiting
+  - Active incidents exposed via `GET /api/alert-webhook`; header badge + home card poll every 30s
+- Documentation expansion:
+  - 18 new ADRs (011-028) covering datasources, SNS, reports, Bedrock model, cache warmer, Cognito, SSE, HMAC, adminEmails, CDK split, multi-route, i18n, code interpreter, CloudFront
+  - 5 new runbooks: alert pipeline, cache warmer, Cognito auth, deploy flow, multi-account
+  - 11 new module CLAUDE.md files (docs/, runbooks/, decisions/, agent/, scripts/, tests/, infra-cdk/, ai-diagnosis/, alert-settings/, k8s/, collectors/)
+  - Web guide: new `monitoring/ai-diagnosis.md` and `monitoring/alerts.md` pages (KO+EN), intro/FAQ updates
+- `LICENSE` file (MIT)
+
+### Fixed
+
+- Report download buttons use proxy URLs instead of raw S3 presigned URLs (STS session expiry fix)
+- SSRF protection for SNS SubscribeURL, admin auth for alert config, PromQL/LogQL injection prevention
+- Alert correlation: bounded retry, timer cleanup, dedup map cap, rate limit hardening
+- Collector dynamic import restricted to code files via `webpackInclude` magic comment (prevents CLAUDE.md from breaking build)
+- `global.anthropic.claude-sonnet-4-6` model ID used for alert diagnosis
+- Duplicate AI diagnosis menu item removed from sidebar
+- Unused `batchTopics` variable removed; env var replacement fixed
+- Dynamic `reportBucket` config restored; 30min stale timeout
+- SNS→SQS queue + DLQ + SNS subscription auto-created in `setup-alert-pipeline`
+- SNS email notifications strip markdown to plaintext
+
+### Security
+
+- `.gitignore` tracks `.env` + `.env.*`; `.env.example` allowlisted
+
 ## [1.8.0] - 2026-04-07
 
 ### Added
@@ -279,7 +371,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AI routing: Code Interpreter, AgentCore, Steampipe+Bedrock, Bedrock Direct
 - Bedrock Claude Sonnet/Opus 4.6 integration
 
-[Unreleased]: https://github.com/whchoi98/awsops/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/whchoi98/awsops/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/whchoi98/awsops/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/whchoi98/awsops/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/whchoi98/awsops/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/whchoi98/awsops/compare/v1.5.2...v1.6.0
@@ -300,6 +393,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 따릅니다.
 
 ## [Unreleased]
+
+### 추가됨
+
+- v2 DB 마이그레이션 프레임워크 (`make migrate`) — 충돌 없는 **ULID** 마이그레이션 파일, advisory-lock,
+  fail-loud(plain INSERT=PK 위반, silent `ON CONFLICT` 없음), **버전 스탬프**(`app_version` ledger 컬럼 —
+  마이그레이션의 `-- since:` 헤더, 없으면 배포 앱 버전). 누적 ledger: 어느 이전 릴리스에서 올리든 누락된
+  마이그레이션만 정확히 적용(버전쌍 스크립트 불필요).
+  - `make migrate-status` — 오프라인 앱 버전 + 각 마이그레이션의 선언된 릴리스.
+  - `scripts/v2/upgrade.sh` (`make upgrade`) — 안전 릴리스 업그레이드 래퍼: RDS 스냅샷 → migrate
+    (레거시 INTEGER→TEXT 1회 부트스트랩 자동) → 멱등 검증 → `make deploy`. `CONFIRM=go` 아니면 PREVIEW.
+  - `terraform/v2/foundation/migrations/README.md` 참조.
+
+### DB 마이그레이션 (since 2.0.0)
+
+- `opencost_config` — read-only OpenCost 설치 설정(클러스터별 helm 버전/values)
+- `prevention_insights` — ADR-032 Phase 4 교차-인시던트 사전예방 티어
+- `eks_registrations` — EKS 런타임 등록(인앱 조회 온보딩; EventBridge 자동등록)
+
+## [1.9.0] - 2026-05-27
+
+### Added
+
+- 이벤트 기반 사전 스케일링 — Phase 1+2 (ADR-010) ([#13](https://github.com/whchoi98/awsops/pull/13))
+  - 신규 `/event-scaling` 관리자 페이지: 이벤트 등록 → 과거 CloudWatch 메트릭 수집(ASG/RDS/MSK/EBS/ALB) → Bedrock Sonnet 4.6 다단계 워밍업 플랜(`PLAN_JSON` 마커) → 자원 타입별 bash 스크립트 다운로드(KEDA/HPA, Aurora 리더, MSK 파티션 확장, ASG warm pool, EBS IOPS)
+  - **검토-후-실행**: 스크립트는 운영자 검토용으로 다운로드만 제공 — 대시보드는 변경 작업을 직접 실행하지 않음
+  - 신규 API 라우트 `/api/event-scaling` (GET/POST/PUT/DELETE, admin 전용)
+  - 신규 SQL 쿼리 `event-scaling.ts` (CloudWatch GetMetricData 배치 + 자원 상태 쿼리)
+  - 라이브러리 3개 추가: `event-scaling.ts` (데이터 모델 + JSON 영속화), `event-scaling-prompts.ts`, `event-scaling-scripts.ts`
+- ADR-029 (Proposed): 변경 작업 프레임워크 — 향후 모든 쓰기 작업의 게이트 모델 (ADR-010 Phase 3 선행 조건)
+- ADR-030 (Accepted): ECS Fargate + Aurora 앱 상태 + 이중 ECR
+  - **Phase 1 기반** (본 릴리스): `AwsopsDataStack` CDK 스택 — Aurora Serverless v2 PostgreSQL 15.5(0.5–4 ACU, Writer + Reader, KMS 암호화, IAM 인증, Private Subnet) 프로비저닝, 7개 테이블 idempotent 스키마(`infra-cdk/data/schema.sql`), 앱 측 pg Pool(`src/lib/db.ts`) DSN/개별 환경변수 지원, 배포 스크립트 `scripts/13-deploy-aurora.sh` (deploy / schema / status / dsn 서브커맨드)
+  - `cdk deploy AwsopsDataStack -c enableAurora=true` 컨텍스트 플래그 뒤로 가드 — 기본 off, 기존 단일 호스트 배포는 영향 없음
+  - **Phase 1 이중 쓰기** (다음 릴리스): 7개 소스 파일이 기존 `data/*.json` 쓰기와 함께 Aurora 쓰기 추가, 7일 패리티 게이트 통과 전까지 읽기는 JSON 유지
+- AI 코드 리뷰 워크플로 ([#12](https://github.com/whchoi98/awsops/pull/12)) — GitHub Actions에서 Claude를 호출해 PR 자동 리뷰
+- 테스트 커버리지 분석 및 개선 계획 ([#11](https://github.com/whchoi98/awsops/pull/11)) — `docs/TEST-COVERAGE-PLAN.md`에 현재 갭과 우선순위 정리
+
+### Fixed
+
+- 좀비 연결 정리가 Steampipe FDW 행에서도 살아남도록 강화 — 풀이 아닌 전용 단명 `Client` 사용으로 풀 고갈 상태에서도 동작; Cost Explorer/IAM 요약 FDW 경로용 임계값을 90초로 단축
+- 단일 어카운트 모드에서 CIS 벤치마크 `relation does not exist` 오류 — non-aggregator 환경에서 스키마 해석 수정
+- 벤치마크 파라미터를 셸 호출 전 allowlist로 검증 (커맨드 인젝션 방지)
+- 알림 진단에 `global.anthropic.claude-sonnet-4-6` 모델 ID 사용 (리전 ID로 4xx 반환되던 문제 해결)
+
+### Infrastructure
+
+- 신규 CDK 스택 `AwsopsDataStack` (`infra-cdk/lib/awsops-data-stack.ts`) — `enableAurora` 컨텍스트 플래그로 opt-in
+- `infra-cdk/data/schema.sql`은 소스 관리 대상 (`.gitignore`에 negation 규칙 추가)
+- CDK 스택 총 4개: `AwsopsStack`, `AwsopsCognitoStack`, `AwsopsAgentCoreStack`, `AwsopsDataStack`
+
+### Documentation
+
+- ADR-029(Proposed), ADR-030(Accepted) 신규 — ADR 29건 → 30건
+- `docs/architecture.md` — Future: ECS Fargate + Aurora Migration 섹션, Aurora 데이터 계층 설명 추가
+
+## [1.8.1] - 2026-04-23
+
+### Added
+
+- 알림 트리거 AI 자동 진단 파이프라인 (ADR-009): 외부 알림 소스에서 자동 근본 원인 분석 ([#10](https://github.com/whchoi98/awsops/pull/10))
+  - 웹훅 엔드포인트(`/api/alert-webhook`): CloudWatch Alarm(SNS), Prometheus Alertmanager, Grafana, SQS, Generic 지원
+  - 알림 상관 분석 엔진: 30초 버퍼링, 시간/서비스/리소스 매칭, 중복 제거, 심각도 에스컬레이션
+  - 조사 오케스트레이터: 알림 컨텍스트 기반 컬렉터/데이터소스 자동 선택, 변경 감지(CloudTrail + K8s Rollout)
+  - Bedrock Sonnet 근본 원인 분석 (타임라인, 대응 조치, 예방 방안)
+  - `AlertContext`로 컬렉터 쿼리를 발화 알림의 서비스/리소스/네임스페이스(±10분)로 스코프 제한
+  - Slack 알림 (Block Kit, 심각도별 채널 라우팅, 웹훅·Bot 모드 스레드 업데이트, 해결 상태 포함)
+  - 지식 베이스: 월간 요약 영구 저장(`data/alert-diagnosis/summary-YYYY-MM.json`), 과거 인시던트 유사도 검색
+  - SQS 백그라운드 폴러, 알림 설정 관리 페이지(`/alert-settings`)
+  - HMAC-SHA256 웹훅 인증 + Rate Limiting
+  - `GET /api/alert-webhook`으로 활성 인시던트 조회, 헤더 배지 + 홈 카드에서 30초 주기 폴링
+- 문서 확장:
+  - ADR 18건 신규(011-028): 데이터소스, SNS, 리포트, Bedrock 모델, 캐시 워머, Cognito, SSE, HMAC, adminEmails, CDK 분리, 멀티 라우트, i18n, Code Interpreter, CloudFront
+  - 런북 5건 신규: 알림 파이프라인, 캐시 워머, Cognito 인증, 배포 플로우, 멀티 어카운트
+  - 모듈 CLAUDE.md 11개 신규: docs/, runbooks/, decisions/, agent/, scripts/, tests/, infra-cdk/, ai-diagnosis/, alert-settings/, k8s/, collectors/
+  - Web 가이드: `monitoring/ai-diagnosis.md`, `monitoring/alerts.md` 페이지 신규 (KO+EN), intro/FAQ 업데이트
+- `LICENSE` 파일 (MIT)
+
+### Fixed
+
+- 리포트 다운로드 버튼이 S3 presigned URL 대신 프록시 URL 사용 (STS 세션 만료 해결)
+- SNS SubscribeURL SSRF 방지, 알림 설정 admin 인증, PromQL/LogQL 인젝션 방지
+- 상관 분석: 재시도 제한, 타이머 정리, dedup map 제한, Rate Limit 강화
+- 컬렉터 동적 import를 `webpackInclude` 매직 코멘트로 코드 파일로 제한 (CLAUDE.md 포함 시 빌드 실패 방지)
+- 알림 진단에 `global.anthropic.claude-sonnet-4-6` 모델 ID 사용
+- 사이드바의 중복된 AI 진단 메뉴 항목 제거
+- 미사용 `batchTopics` 변수 제거; env var 치환 수정
+- `reportBucket` config 동적 읽기 복원; 30분 stale timeout
+- `setup-alert-pipeline`에서 SNS→SQS 큐 + DLQ + SNS 구독 자동 생성
+- SNS 이메일 알림 마크다운 → 평문 변환
+
+### Security
+
+- `.gitignore`에 `.env` + `.env.*` 추적; `.env.example`은 allowlist
 
 ## [1.8.0] - 2026-04-07
 
@@ -567,7 +752,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AI 라우팅: Code Interpreter, AgentCore, Steampipe+Bedrock, Bedrock Direct
 - Bedrock Claude Sonnet/Opus 4.6 통합
 
-[Unreleased]: https://github.com/whchoi98/awsops/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/whchoi98/awsops/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/whchoi98/awsops/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/whchoi98/awsops/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/whchoi98/awsops/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/whchoi98/awsops/compare/v1.5.2...v1.6.0
