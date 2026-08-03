@@ -48,7 +48,14 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError('invalid_request', 400);
   }
 
-  const result = await initiateAuth(email, password);
+  let result: Awaited<ReturnType<typeof initiateAuth>>;
+  try {
+    result = await initiateAuth(email, password);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('[auth/login] authentication failed before response mapping:', message);
+    return jsonError('unavailable', 502);
+  }
 
   if (!result.ok) {
     const status = result.code === 'invalid_credentials' ? 401 : result.code === 'challenge' ? 403 : 502;

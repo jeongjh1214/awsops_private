@@ -98,4 +98,12 @@ describe('POST /api/auth/login', () => {
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: 'unavailable' });
   });
+
+  it('502 unavailable when auth throws before mapping a result', async () => {
+    initiateAuth.mockRejectedValue(new Error('bad local config'));
+    const { POST } = await import('./route');
+    const res = await POST(req({ email: 'a@b.com', password: 'pw' }));
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'unavailable' });
+  });
 });
