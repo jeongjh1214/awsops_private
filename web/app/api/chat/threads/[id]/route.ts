@@ -7,11 +7,11 @@ function json(obj: unknown, status: number) {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
 }
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await verifyUser(request.headers.get('cookie'));
   if (!user) return json({ status: 'error', message: 'unauthenticated' }, 401);
   try {
-    const out = await getThread(user.sub, params.id);
+    const out = await getThread(user.sub, (await params).id);
     if (!out) return json({ status: 'error', message: 'not found' }, 404);
     return json(out, 200);
   } catch {
@@ -19,11 +19,11 @@ export async function GET(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await verifyUser(request.headers.get('cookie'));
   if (!user) return json({ status: 'error', message: 'unauthenticated' }, 401);
   try {
-    const ok = await deleteThread(user.sub, params.id);
+    const ok = await deleteThread(user.sub, (await params).id);
     return ok ? json({ status: 'ok' }, 200) : json({ status: 'error', message: 'not found' }, 404);
   } catch {
     return json({ status: 'error', message: 'not found' }, 404);

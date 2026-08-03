@@ -4,11 +4,11 @@ import { getPool } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await verifyUser(req.headers.get('cookie')))) {
     return NextResponse.json({ message: 'unauthenticated' }, { status: 401 });
   }
-  const id = Number(params.id);
+  const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ message: 'invalid run id' }, { status: 400 });
   }

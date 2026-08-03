@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useActiveAccount, accountParam } from '@/lib/account-context';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { Background, Controls, Position, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import PageHeader from '@/components/ui/PageHeader';
@@ -28,7 +29,8 @@ const relLabel: Record<string, string> = {
   'infra:in_vpc': 'in vpc', 'infra:in_subnet': 'in subnet', 'infra:uses_sg': 'uses sg',
 };
 
-export default function ResourceTopologyPage({ params }: { params: { id: string } }) {
+export default function ResourceTopologyPage() {
+  const params = useParams<{ id: string }>();
   const fromId = decodeURIComponent(params.id);
   const [activeAccount] = useActiveAccount();
   const [depth, setDepth] = useState(2);

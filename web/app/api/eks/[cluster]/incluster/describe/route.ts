@@ -9,11 +9,11 @@ export const dynamic = 'force-dynamic';
 // configmap data VALUES are redacted in the lib; managedFields stripped.
 const NAME_RE = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/; // RFC1123 subdomain
 
-export async function GET(request: Request, { params }: { params: { cluster: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ cluster: string }> }) {
   if (!(await verifyUser(request.headers.get('cookie')))) {
     return Response.json({ status: 'error', message: 'unauthenticated' }, { status: 401 });
   }
-  if (!(await isAllowed(params.cluster))) {
+  if (!(await isAllowed((await params).cluster))) {
     return Response.json({ status: 'error', message: 'unknown cluster' }, { status: 404 });
   }
   const url = new URL(request.url);
@@ -27,7 +27,7 @@ export async function GET(request: Request, { params }: { params: { cluster: str
     return Response.json({ status: 'error', message: 'invalid name/namespace' }, { status: 400 });
   }
   try {
-    return Response.json({ object: await describeInCluster(params.cluster, kind, name, namespace) });
+    return Response.json({ object: await describeInCluster((await params).cluster, kind, name, namespace) });
   } catch (e) {
     return Response.json({ status: 'error', message: e instanceof Error ? e.message : String(e) }, { status: 502 });
   }

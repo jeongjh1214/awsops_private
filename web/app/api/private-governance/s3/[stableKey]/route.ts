@@ -15,12 +15,12 @@ const err = (message: string, status: number) => NextResponse.json({ message }, 
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { stableKey: string } },
+  { params }: { params: Promise<{ stableKey: string }> },
 ) {
   const user = await verifyUser(request.headers.get('cookie'));
   if (!user) return err('unauthenticated', 401);
 
-  const stableKey = decodeURIComponent(params.stableKey);
+  const stableKey = decodeURIComponent((await params).stableKey);
   const identity = parseStableKey(stableKey);
   if (!identity) return err('stableKey must be accountId:bucketName', 400);
 
@@ -35,13 +35,13 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { stableKey: string } },
+  { params }: { params: Promise<{ stableKey: string }> },
 ) {
   const user = await verifyUser(request.headers.get('cookie'));
   if (!user) return err('unauthenticated', 401);
   if (!(await isAdmin(user))) return err('forbidden: admin only', 403);
 
-  const stableKey = decodeURIComponent(params.stableKey);
+  const stableKey = decodeURIComponent((await params).stableKey);
   const identity = parseStableKey(stableKey);
   if (!identity) return err('stableKey must be accountId:bucketName', 400);
 

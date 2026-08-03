@@ -12,24 +12,24 @@ function json(obj: unknown, status: number) {
 // GET — downloadable install bundle (values.yaml + install.sh). Generated from saved config
 // (or defaults). cluster identity + region are injected from the path/env, never trusted from
 // stored config. Read-only: the user runs the bundle out-of-band on their own kubeconfig.
-export async function GET(request: Request, { params }: { params: { cluster: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ cluster: string }> }) {
   const user = await verifyUser(request.headers.get('cookie'));
   if (!user) return json({ status: 'error', message: 'unauthenticated' }, 401);
-  if (!(await isClusterOnboarded(params.cluster))) return json({ status: 'error', message: 'unknown cluster' }, 404);
+  if (!(await isClusterOnboarded((await params).cluster))) return json({ status: 'error', message: 'unknown cluster' }, 404);
   try {
     const region = process.env.AWS_REGION || 'ap-northeast-2';
-    const saved = await getOpencostConfig(params.cluster);
+    const saved = await getOpencostConfig((await params).cluster);
     const storedValues = ((saved?.config?.values as Record<string, unknown>) ?? {}) as Partial<OpencostCuratedValues>;
     const storedOverride = saved?.config?.override as Record<string, unknown> | undefined;
     const chartVersion = saved?.chartVersion || DEFAULT_CHART_VERSION;
     const values: OpencostCuratedValues = {
       ...DEFAULT_CURATED_VALUES,
       ...storedValues,
-      defaultClusterId: params.cluster, // identity always from the path
+      defaultClusterId: (await params).cluster, // identity always from the path
       awsRegion: region,
     };
     const valuesYaml = renderValuesYaml({ chartVersion, values, override: storedOverride });
-    const installSh = renderInstallSh({ cluster: params.cluster, region, chartVersion });
+    const installSh = renderInstallSh({ cluster: (await params).cluster, region, chartVersion });
     return json({ valuesYaml, installSh, chartVersion }, 200);
   } catch (e) {
     return json({ status: 'error', message: e instanceof Error ? e.message : String(e) }, 500);

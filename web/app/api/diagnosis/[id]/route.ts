@@ -20,10 +20,10 @@ async function readArtifact(uri: string): Promise<string | null> {
   return (await r.Body?.transformToString()) ?? null;
 }
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await verifyUser(req.headers.get('cookie'));
   if (!user) return NextResponse.json({ message: 'unauthenticated' }, { status: 401 });
-  const id = Number(params.id);
+  const id = Number((await params).id);
   if (!Number.isInteger(id)) return NextResponse.json({ message: 'invalid report id' }, { status: 400 });
   const report = await getReport(id);
   if (!report) return NextResponse.json({ message: 'not found' }, { status: 404 });
@@ -64,10 +64,10 @@ function sanitizeMeta(body: any): { title?: string | null; tags?: string[] } | n
   return out;
 }
 
-async function loadMutable(req: Request, params: { id: string }) {
+async function loadMutable(req: Request, params: Promise<{ id: string }>) {
   const user = await verifyUser(req.headers.get('cookie'));
   if (!user) return { err: NextResponse.json({ message: 'unauthenticated' }, { status: 401 }) };
-  const id = Number(params.id);
+  const id = Number((await params).id);
   if (!Number.isInteger(id)) return { err: NextResponse.json({ message: 'invalid report id' }, { status: 400 }) };
   const report = await getReport(id);
   if (!report) return { err: NextResponse.json({ message: 'not found' }, { status: 404 }) };
@@ -77,7 +77,7 @@ async function loadMutable(req: Request, params: { id: string }) {
   return { id };
 }
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await loadMutable(req, params);
   if (g.err) return g.err;
   let body: any = {};
@@ -92,7 +92,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await loadMutable(req, params);
   if (g.err) return g.err;
   await softDeleteReport(g.id!);

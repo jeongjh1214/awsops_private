@@ -9,15 +9,15 @@ export const dynamic = 'force-dynamic';
 // v1 parity: IAM inventories are admin-only (identity data is sensitive).
 const ADMIN_ONLY_TYPES = new Set(['iam_user', 'iam_role']);
 
-export async function GET(request: Request, { params }: { params: { type: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ type: string }> }) {
   const user = await verifyUser(request.headers.get('cookie'));
   if (!user) {
     return Response.json({ status: 'error', message: 'unauthenticated' }, { status: 401 });
   }
-  if (!(params.type in INVENTORY_TYPES)) {
+  if (!((await params).type in INVENTORY_TYPES)) {
     return Response.json({ status: 'error', message: 'unknown type' }, { status: 404 });
   }
-  if (ADMIN_ONLY_TYPES.has(params.type) && !(await isAdmin(user))) {
+  if (ADMIN_ONLY_TYPES.has((await params).type) && !(await isAdmin(user))) {
     return Response.json({ status: 'error', message: '관리자 전용 메뉴입니다 (IAM)' }, { status: 403 });
   }
   const url = new URL(request.url);
@@ -32,10 +32,10 @@ export async function GET(request: Request, { params }: { params: { type: string
   const accountsParam = url.searchParams.get('accounts');
   const accounts = accountsParam === null ? ['self'] : accountsParam === '__all__' ? ('__all__' as const) : accountsParam.split(',').filter(Boolean);
   try {
-    const page = await readResources(params.type, { limit, offset, regions, includeGlobal, accounts });
+    const page = await readResources((await params).type, { limit, offset, regions, includeGlobal, accounts });
     // MTD real cost isn't in inventory_resources (Steampipe has no CE access) — merge it in here.
     // Degrades silently: cost-allocation tag not active yet, or CE denied → rows just lack the field.
-    if (params.type === 'ecs_cluster') {
+    if ((await params).type === 'ecs_cluster') {
       try {
         const costs = await getEcsClusterCosts();
         for (const row of page.rows) {

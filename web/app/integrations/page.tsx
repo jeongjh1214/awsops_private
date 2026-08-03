@@ -9,7 +9,8 @@ import IntegrationsTabs from './IntegrationsTabs';
 // resolved server-side and gates the mutating UI; reads + Explore are available to all authenticated users.
 export const dynamic = 'force-dynamic';
 
-export default async function IntegrationsPage({ searchParams }: { searchParams?: { tab?: string } }) {
+export default async function IntegrationsPage({ searchParams }: { searchParams?: Promise<{ tab?: string }> }) {
+  const tab = (await searchParams)?.tab;
   let canManage = false;
   try {
     const user = await verifyUser(cookies().toString());
@@ -19,7 +20,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams?
   return (
     <div>
       <PageHeader title="연동 · Integrations" subtitle="데이터소스 · 커넥터 · 에이전트와 스킬을 한 곳에서 관리합니다." />
-      <IntegrationsTabs initialTab={searchParams?.tab} canManage={canManage} />
+      <IntegrationsTabs initialTab={tab} canManage={canManage} />
     </div>
   );
 }

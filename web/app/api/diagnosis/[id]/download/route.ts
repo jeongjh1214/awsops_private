@@ -14,7 +14,7 @@ const CONTENT_TYPE: Record<string, string> = {
   pdf: 'application/pdf',
 };
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await verifyUser(req.headers.get('cookie'));
   if (!user) return NextResponse.json({ message: 'unauthenticated' }, { status: 401 });
 
@@ -23,7 +23,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ message: 'unsupported format' }, { status: 400 });
   }
 
-  const id = Number(params.id);
+  const id = Number((await params).id);
   if (!Number.isInteger(id)) {
     return NextResponse.json({ message: 'invalid report id' }, { status: 400 });
   }
@@ -45,7 +45,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       status: 200,
       headers: {
         'Content-Type': CONTENT_TYPE[format],
-        'Content-Disposition': `attachment; filename="awsops-diagnosis-${params.id}.${format}"`,
+        'Content-Disposition': `attachment; filename="awsops-diagnosis-${(await params).id}.${format}"`,
       },
     });
   } catch {

@@ -8,19 +8,19 @@ export const dynamic = 'force-dynamic';
 // CloudWatch-only — in-cluster signals (conditions, addon health) come from the incluster route.
 const RANGE_ALLOWED = [3600, 21600, 86400, 604800];
 
-export async function GET(request: Request, { params }: { params: { cluster: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ cluster: string }> }) {
   if (!(await verifyUser(request.headers.get('cookie')))) {
     return Response.json({ status: 'error', message: 'unauthenticated' }, { status: 401 });
   }
-  if (!(await isAllowed(params.cluster))) {
+  if (!(await isAllowed((await params).cluster))) {
     return Response.json({ status: 'error', message: 'unknown cluster' }, { status: 404 });
   }
   const rangeRaw = Number(new URL(request.url).searchParams.get('range') ?? 3600);
   const range = RANGE_ALLOWED.includes(rangeRaw) ? rangeRaw : 3600;
   const [controlPlane, cluster, nodes] = await Promise.all([
-    eksControlPlane(params.cluster, undefined, range),
-    eksClusterCI(params.cluster, undefined, range),
-    eksNodesCI(params.cluster, undefined, range),
+    eksControlPlane((await params).cluster, undefined, range),
+    eksClusterCI((await params).cluster, undefined, range),
+    eksNodesCI((await params).cluster, undefined, range),
   ]);
   return Response.json({ range, controlPlane, cluster, nodes });
 }

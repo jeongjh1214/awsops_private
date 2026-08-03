@@ -4,11 +4,11 @@ import { isAllowed } from '@/lib/eks-registry';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request, { params }: { params: { cluster: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ cluster: string }> }) {
   if (!(await verifyUser(request.headers.get('cookie')))) {
     return Response.json({ status: 'error', message: 'unauthenticated' }, { status: 401 });
   }
-  if (!(await isAllowed(params.cluster))) {
+  if (!(await isAllowed((await params).cluster))) {
     return Response.json({ status: 'error', message: 'unknown cluster' }, { status: 404 });
   }
   const kind = new URL(request.url).searchParams.get('kind') || '';
@@ -16,7 +16,7 @@ export async function GET(request: Request, { params }: { params: { cluster: str
     return Response.json({ status: 'error', message: 'unknown kind' }, { status: 400 });
   }
   try {
-    return Response.json({ kind, rows: await listInCluster(params.cluster, kind) });
+    return Response.json({ kind, rows: await listInCluster((await params).cluster, kind) });
   } catch (e) {
     return Response.json({ status: 'error', message: e instanceof Error ? e.message : String(e) }, { status: 502 });
   }

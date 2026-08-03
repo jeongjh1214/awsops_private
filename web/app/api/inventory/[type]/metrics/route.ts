@@ -16,7 +16,7 @@ type Card = { label: string; value: string | number; accent?: boolean };
 // AWS_REGION client — it has no per-instance region routing. Selecting a non-default region
 // narrows the table correctly but these two KPI cards can go null/inaccurate for it. Fixing
 // that needs per-region CloudWatch clients in lib/metrics.ts, which is a separate change.
-export async function GET(request: Request, { params }: { params: { type: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ type: string }> }) {
   if (!(await verifyUser(request.headers.get('cookie')))) {
     return Response.json({ status: 'error', message: 'unauthenticated' }, { status: 401 });
   }
@@ -29,7 +29,7 @@ export async function GET(request: Request, { params }: { params: { type: string
   const regions: RegionScope = regionsParam === null || regionsParam === '__all__' ? '__all__' : regionsParam.split(',').filter(Boolean);
   const includeGlobal = url.searchParams.get('includeGlobal') !== '0';
   try {
-    if (params.type === 'ec2') {
+    if ((await params).type === 'ec2') {
       // Per-instance diagnostic fleet (page bottom table) — must run BEFORE the KPI-cards path.
       if (url.searchParams.get('ids') !== null) {
         const ids = (url.searchParams.get('ids') ?? '')
@@ -73,7 +73,7 @@ export async function GET(request: Request, { params }: { params: { type: string
       return Response.json({ cards });
     }
 
-    if (params.type === 'rds') {
+    if ((await params).type === 'rds') {
       // resource_id = DBInstanceIdentifier (sync_lambda). Metrics are a live CloudWatch read (not stored).
       // ?ids=a,b → per-instance diagnostic fleet (page table); ?id=<x> → detail-panel series; else KPI cards.
       const idsParam = new URL(request.url).searchParams.get('ids');
@@ -110,14 +110,14 @@ export async function GET(request: Request, { params }: { params: { type: string
     // ALB: per-LB diagnostics + per-TargetGroup health. The CloudWatch LoadBalancer dimension is
     // the ARN suffix ("app/<name>/<id>") — resolved from the synced inventory ARNs, keyed back to
     // resource_id for the page. TG dims come from target_group rows' load_balancer_arns linkage.
-    if ((params.type === 'alb' || params.type === 'nlb') && url.searchParams.get('ids') !== null) {
-      const isAlb = params.type === 'alb';
+    if (((await params).type === 'alb' || (await params).type === 'nlb') && url.searchParams.get('ids') !== null) {
+      const isAlb = (await params).type === 'alb';
       const prefix = isAlb ? 'app' : 'net';
       const ids = (url.searchParams.get('ids') ?? '')
         .split(',').map((x) => x.trim()).filter((x) => /^[a-zA-Z0-9-]+$/.test(x)).slice(0, 100);
       const lbRows = await getPool().query<{ resource_id: string; arn: string | null }>(
         `SELECT resource_id, data->>'arn' AS arn FROM inventory_resources
-         WHERE resource_type = $2 AND resource_id = ANY($1)`, [ids, params.type],
+         WHERE resource_type = $2 AND resource_id = ANY($1)`, [ids, (await params).type],
       );
       const dimOf = new Map<string, string>(); // resource_id → "app|net/name/id"
       for (const row of lbRows.rows) {
@@ -154,7 +154,7 @@ export async function GET(request: Request, { params }: { params: { type: string
 
     // S3: per-bucket storage(일별)+request(유료, 활성화 시) metrics — the metrics live in each
     // BUCKET's region, so ids are grouped by the inventory row region and queried per region.
-    if (params.type === 's3' && url.searchParams.get('ids') !== null) {
+    if ((await params).type === 's3' && url.searchParams.get('ids') !== null) {
       const ids = (url.searchParams.get('ids') ?? '')
         .split(',').map((x) => x.trim()).filter((x) => /^[a-z0-9.-]{3,63}$/.test(x)).slice(0, 150);
       const rowsR = await getPool().query<{ resource_id: string; region: string | null }>(
@@ -176,7 +176,7 @@ export async function GET(request: Request, { params }: { params: { type: string
     }
 
     // Lambda: per-function diagnostics grouped by the function's region.
-    if (params.type === 'lambda' && url.searchParams.get('ids') !== null) {
+    if ((await params).type === 'lambda' && url.searchParams.get('ids') !== null) {
       const ids = (url.searchParams.get('ids') ?? '')
         .split(',').map((x) => x.trim()).filter((x) => /^[a-zA-Z0-9._-]{1,140}$/.test(x)).slice(0, 150);
       const rowsR = await getPool().query<{ resource_id: string; region: string | null }>(
@@ -197,7 +197,7 @@ export async function GET(request: Request, { params }: { params: { type: string
 
     // EBS: per-volume diagnostics grouped by the volume's region + instance-level EBS balance
     // (EBSIOBalance%/EBSByteBalance%) for the ATTACHED instances (from attachments JSONB).
-    if (params.type === 'ebs_volume' && url.searchParams.get('ids') !== null) {
+    if ((await params).type === 'ebs_volume' && url.searchParams.get('ids') !== null) {
       const ids = (url.searchParams.get('ids') ?? '')
         .split(',').map((x) => x.trim()).filter((x) => /^vol-[0-9a-f]+$/.test(x)).slice(0, 150);
       const rowsR = await getPool().query<{ resource_id: string; region: string | null; att: unknown }>(
@@ -229,7 +229,7 @@ export async function GET(request: Request, { params }: { params: { type: string
     }
 
     // DynamoDB: per-table diagnostics + Global Tables replication lag (discovered via ListMetrics).
-    if (params.type === 'dynamodb' && url.searchParams.get('ids') !== null) {
+    if ((await params).type === 'dynamodb' && url.searchParams.get('ids') !== null) {
       const ids = (url.searchParams.get('ids') ?? '')
         .split(',').map((x) => x.trim()).filter((x) => /^[a-zA-Z0-9._-]+$/.test(x)).slice(0, 200);
       const [fleet, replication] = await Promise.all([ddbFleetLive(ids, range), ddbReplicationLags(30, range)]);
@@ -237,14 +237,14 @@ export async function GET(request: Request, { params }: { params: { type: string
     }
     // v1-parity fleet metrics (page-level tables):
     // elasticache/opensearch ?ids=a,b → { fleet: { id: {metricKey: value|null} } }
-    if ((params.type === 'elasticache' || params.type === 'opensearch') && url.searchParams.get('ids') !== null) {
+    if (((await params).type === 'elasticache' || (await params).type === 'opensearch') && url.searchParams.get('ids') !== null) {
       const ids = (url.searchParams.get('ids') ?? '')
         .split(',').map((x) => x.trim()).filter((x) => /^[a-zA-Z0-9._-]+$/.test(x)).slice(0, 200);
-      const fleet = params.type === 'elasticache' ? await elasticacheFleetLive(ids, range) : await opensearchFleetLive(ids, range);
+      const fleet = (await params).type === 'elasticache' ? await elasticacheFleetLive(ids, range) : await opensearchFleetLive(ids, range);
       return Response.json({ fleet, range });
     }
     // msk ?nodes=<clusterArn> → { nodes, brokerMetrics } (kafka ListNodes + per-broker CloudWatch)
-    if (params.type === 'msk' && url.searchParams.get('nodes') !== null) {
+    if ((await params).type === 'msk' && url.searchParams.get('nodes') !== null) {
       const arn = url.searchParams.get('nodes') ?? '';
       if (!/^arn:aws:kafka:[a-z0-9-]+:\d{12}:cluster\/[a-zA-Z0-9._-]+\/[a-z0-9-]+$/.test(arn)) {
         return Response.json({ status: 'error', message: 'invalid cluster arn' }, { status: 400 });
@@ -262,12 +262,12 @@ export async function GET(request: Request, { params }: { params: { type: string
     }
 
     // ElastiCache/OpenSearch/MSK: per-resource live metrics for the detail panel (?id=).
-    if (hasLiveMetrics(params.type)) {
+    if (hasLiveMetrics((await params).type)) {
       const id = url.searchParams.get('id');
       if (id) {
-        const metrics = await liveResourceMetrics(params.type, id);
+        const metrics = await liveResourceMetrics((await params).type, id);
         // MSK: append bootstrap broker connection strings (v1 parity) — ARN from the synced row.
-        if (params.type === 'msk') {
+        if ((await params).type === 'msk') {
           try {
             const r = await getPool().query<{ arn: string | null }>(
               `SELECT data->>'arn' AS arn FROM inventory_resources
