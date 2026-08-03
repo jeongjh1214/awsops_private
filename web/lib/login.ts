@@ -85,9 +85,16 @@ export async function initiateAuth(email: string, password: string): Promise<Log
  * seconds). `remember=false` → session cookie (no Max-Age, dies with the browser session).
  */
 export function sessionCookie(idToken: string, remember: boolean, expiresIn: number): string {
-  let cookie = `${COOKIE_NAME}=${idToken}; Path=/; Secure; HttpOnly; SameSite=Lax`;
+  let cookie = `${COOKIE_NAME}=${idToken}; Path=/; HttpOnly; SameSite=Lax`;
+  if (shouldUseSecureCookie()) cookie += '; Secure';
   if (remember) cookie += `; Max-Age=${expiresIn}`;
   return cookie;
+}
+
+function shouldUseSecureCookie(): boolean {
+  if (process.env.AWSOPS_COOKIE_SECURE === 'false') return false;
+  if (process.env.NODE_ENV === 'development') return false;
+  return true;
 }
 
 /**

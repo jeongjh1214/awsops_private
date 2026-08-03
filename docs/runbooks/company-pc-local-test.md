@@ -135,6 +135,14 @@ Open:
 http://127.0.0.1:3000
 ```
 
+If every page action returns `401`, check authentication first:
+
+```bash
+curl -i http://127.0.0.1:3000/api/me
+```
+
+`401 unauthenticated` means the browser is not sending a valid `awsops_token` cookie. Open `/login`, sign in, and confirm the browser has an `awsops_token` cookie for `127.0.0.1`. Local `npm run dev` omits the cookie `Secure` attribute so the cookie works over `http://127.0.0.1`; production keeps `Secure`.
+
 ## Quick Diagnostics
 
 Run:

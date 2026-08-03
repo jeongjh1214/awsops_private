@@ -8,6 +8,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  delete process.env.AWSOPS_COOKIE_SECURE;
 });
 
 function jsonResponse(body: unknown, init?: { status?: number }) {
@@ -120,13 +121,27 @@ describe('initiateAuth', () => {
 });
 
 describe('sessionCookie', () => {
-  it('sets the awsops_token cookie with the security attributes', () => {
+  it('sets the awsops_token cookie with production security attributes', () => {
+    vi.stubEnv('NODE_ENV', 'production');
     const c = sessionCookie('eyJ.tok', false, 43200);
     expect(c).toContain('awsops_token=eyJ.tok');
     expect(c).toContain('Path=/');
     expect(c).toContain('Secure');
     expect(c).toContain('HttpOnly');
     expect(c).toContain('SameSite=Lax');
+  });
+
+  it('omits Secure in local development so http://127.0.0.1 login keeps the cookie', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    const c = sessionCookie('eyJ.tok', false, 43200);
+    expect(c).not.toContain('Secure');
+  });
+
+  it('allows an explicit local cookie override for company PC tests', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.AWSOPS_COOKIE_SECURE = 'false';
+    const c = sessionCookie('eyJ.tok', false, 43200);
+    expect(c).not.toContain('Secure');
   });
 
   it('omits Max-Age when remember is false (session cookie)', () => {
