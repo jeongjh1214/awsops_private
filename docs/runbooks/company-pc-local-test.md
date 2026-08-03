@@ -54,6 +54,8 @@ cp docs/examples/config.vm-private.example.json data/config.json
 Edit `data/config.json`:
 
 - set `activeEnvironment` to `local`
+- keep `localAuth.enabled` as `true` for local-only login bypass
+- change `localAuth.email`, `localAuth.password`, and `localAuth.sessionSecret`
 - keep `assetInventory.dbProvider` as `sqlite` for local testing
 - keep or update `assetInventory.sqlitePath`, for example `data/awsops.db`
 - set `environments.local.awsProfile`
@@ -134,6 +136,20 @@ Open:
 ```text
 http://127.0.0.1:3000
 ```
+
+The local-only default login shape is:
+
+```json
+{
+  "localAuth": {
+    "enabled": true,
+    "email": "local@awsops.internal",
+    "password": "local-test-password-change-me"
+  }
+}
+```
+
+Change the password in `data/config.json` before using it. Local auth works only when `activeEnvironment` is `local`; production still uses Cognito.
 
 If every page action returns `401`, check authentication first:
 

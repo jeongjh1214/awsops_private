@@ -14,6 +14,13 @@ export interface PrivateRuntimeConfig {
     dbProvider?: string;
     sqlitePath?: string;
   };
+  localAuth?: {
+    enabled?: boolean;
+    email?: string;
+    password?: string;
+    groups?: string[];
+    sessionSecret?: string;
+  };
   environments: Record<string, {
     endpointMode?: string;
     bedrockProfile?: string;

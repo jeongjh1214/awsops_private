@@ -3,6 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const jwtVerify = vi.fn();
 vi.mock('jose', () => ({
   createRemoteJWKSet: () => () => ({}),
+  SignJWT: class {
+    setProtectedHeader() { return this; }
+    setIssuer() { return this; }
+    setAudience() { return this; }
+    setSubject() { return this; }
+    setIssuedAt() { return this; }
+    setExpirationTime() { return this; }
+    async sign() { return 'signed.jwt'; }
+  },
   jwtVerify: (...a: unknown[]) => jwtVerify(...a),
 }));
 

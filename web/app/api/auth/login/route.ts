@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
-import { initiateAuth, sessionCookie, safeNext } from '@/lib/login';
-import { readJsonBounded, BodyTooLargeError } from '@/lib/http-body';
+import { initiateAuth, sessionCookie, safeNext } from '../../../../lib/login';
+import { readJsonBounded, BodyTooLargeError } from '../../../../lib/http-body';
 
 // Thin BFF adapter over lib/login.ts for the v2 in-app /login form. All auth logic lives in
 // the lib (unsigned Cognito InitiateAuth + cookie/redirect helpers); this route only parses

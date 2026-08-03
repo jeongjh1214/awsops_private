@@ -69,6 +69,15 @@
     "queryCacheTtlSec": 300,
     "maxToolResultBytes": 200000
   },
+  "localAuth": {
+    "enabled": true,
+    "email": "local@awsops.internal",
+    "password": "local-test-password-change-me",
+    "groups": [
+      "admins"
+    ],
+    "sessionSecret": "replace-with-random-local-only-secret"
+  },
   "queryPolicy": {
     "enabledServices": [
       "ec2",

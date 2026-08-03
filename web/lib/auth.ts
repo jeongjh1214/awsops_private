@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { verifyLocalUserToken } from './local-auth';
 
 export interface User {
   sub: string;
@@ -31,6 +32,8 @@ function getJwks() {
 export async function verifyUser(cookieHeader: string | null): Promise<User | null> {
   const token = parseCookie(cookieHeader, 'awsops_token');
   if (!token) return null;
+  const localUser = await verifyLocalUserToken(token);
+  if (localUser) return localUser;
   const region = process.env.AWS_REGION || 'ap-northeast-2';
   const pool = process.env.COGNITO_USER_POOL_ID;
   try {

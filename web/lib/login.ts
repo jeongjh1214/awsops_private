@@ -6,6 +6,8 @@
 //
 // Coupling contract: the cookie name `awsops_token` MUST match the edge Lambda template
 // (cognito_edge.py.tftpl) and lib/auth.ts — change all sites together.
+import { authenticateLocalUser, isLocalAuthConfigured } from './local-auth';
+export { safeNext } from './login-shared';
 
 /** Result of an InitiateAuth attempt. Discriminated on `ok`. */
 export type LoginResult =
@@ -29,6 +31,13 @@ function region(): string {
  * - Network error / 5xx / unexpected shape → unavailable.
  */
 export async function initiateAuth(email: string, password: string): Promise<LoginResult> {
+  if (isLocalAuthConfigured()) {
+    const local = await authenticateLocalUser(email, password);
+    return local
+      ? { ok: true, idToken: local.idToken, expiresIn: local.expiresIn }
+      : { ok: false, code: 'invalid_credentials' };
+  }
+
   const url = `https://cognito-idp.${region()}.amazonaws.com/`;
   let resp: Response;
   try {
@@ -95,20 +104,4 @@ function shouldUseSecureCookie(): boolean {
   if (process.env.AWSOPS_COOKIE_SECURE === 'false') return false;
   if (process.env.NODE_ENV === 'development') return false;
   return true;
-}
-
-/**
- * Sanitize the `next` redirect to a safe same-origin relative path; otherwise '/'.
- *
- * Allow only: starts with '/', the 2nd char is not '/' or '\\' (blocks //evil.com and the
- * backslash-bypass /\evil.com — browsers normalize '\' to '/'), contains no '\\' anywhere,
- * and length ≤ 2048. '/@evil.com' is allowed (it is a same-origin path, not an authority).
- */
-export function safeNext(raw: string): string {
-  if (typeof raw !== 'string') return '/';
-  if (raw.length === 0 || raw.length > 2048) return '/';
-  if (raw[0] !== '/') return '/';
-  if (raw[1] === '/' || raw[1] === '\\') return '/';
-  if (raw.includes('\\')) return '/';
-  return raw;
 }

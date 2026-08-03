@@ -3,7 +3,7 @@ import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AwsopsMark from '@/components/ui/AwsopsMark';
 import { useI18n } from '@/components/shell/LanguageProvider';
-import { safeNext } from '@/lib/login';
+import { safeNext } from '@/lib/login-shared';
 
 type ErrCode = 'invalid_credentials' | 'challenge' | 'unavailable';
 

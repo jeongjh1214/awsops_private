@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // HTTP adapter-layer test: initiateAuth is mocked (its own behavior is covered by lib/login.test.ts);
 // sessionCookie/safeNext run for real so we exercise the route's wiring of the lib helpers.
 const initiateAuth = vi.fn();
-vi.mock('@/lib/login', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/login')>('@/lib/login');
+vi.mock('../../../../lib/login', async () => {
+  const actual = await vi.importActual<typeof import('../../../../lib/login')>('../../../../lib/login');
   return { ...actual, initiateAuth: (...a: unknown[]) => initiateAuth(...a) };
 });
 
