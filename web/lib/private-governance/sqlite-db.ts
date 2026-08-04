@@ -79,6 +79,7 @@ function ensurePrivateSqliteSchema(db: PrivateSqliteDb): void {
       service TEXT NOT NULL,
       resource_type TEXT NOT NULL,
       resource_id TEXT NOT NULL,
+      resource_name TEXT NOT NULL DEFAULT '',
       arn TEXT DEFAULT '',
       name TEXT DEFAULT '',
       region TEXT DEFAULT '',
@@ -138,6 +139,7 @@ function migratePrivateSqliteSchema(db: PrivateSqliteDb): void {
   ensureColumns(db, 'asset_records', {
     provider: "TEXT NOT NULL DEFAULT 'aws'",
     account_name: "TEXT DEFAULT ''",
+    resource_name: "TEXT NOT NULL DEFAULT ''",
     arn: "TEXT DEFAULT ''",
     name: "TEXT DEFAULT ''",
     region: "TEXT DEFAULT ''",

@@ -188,6 +188,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
           service TEXT NOT NULL,
           resource_type TEXT NOT NULL,
           resource_id TEXT NOT NULL,
+          resource_name TEXT NOT NULL DEFAULT '',
           arn TEXT DEFAULT '',
           name TEXT DEFAULT '',
           region TEXT DEFAULT '',
@@ -209,6 +210,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     ensure_columns(conn, "asset_records", {
         "provider": "TEXT NOT NULL DEFAULT 'aws'",
         "account_name": "TEXT DEFAULT ''",
+        "resource_name": "TEXT NOT NULL DEFAULT ''",
         "arn": "TEXT DEFAULT ''",
         "name": "TEXT DEFAULT ''",
         "region": "TEXT DEFAULT ''",
@@ -294,31 +296,75 @@ def upsert_asset_record(
     data_json: str,
     now: str,
 ) -> None:
+    columns = asset_record_columns(db)
+    values = asset_record_values(
+        columns,
+        account_id=account_id,
+        account_name=account_name,
+        service=service,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        arn=arn,
+        name=name,
+        region=region,
+        data_json=data_json,
+        now=now,
+    )
+    update_columns = [
+        col for col in values
+        if col not in {"id", "account_id", "service", "resource_type", "resource_id", "discovered_at"}
+    ]
+    set_sql = ", ".join(f"{col}=?" for col in update_columns)
     updated = db.execute(
-        """
+        f"""
         UPDATE asset_records
-           SET provider='aws',
-               account_name=?,
-               arn=?,
-               name=?,
-               region=?,
-               data_json=?,
-               last_seen_at=?,
-               is_active=1
+           SET {set_sql}
          WHERE account_id=? AND service=? AND resource_type=? AND resource_id=?
         """,
-        (account_name, arn, name, region, data_json, now, account_id, service, resource_type, resource_id),
+        [values[col] for col in update_columns] + [account_id, service, resource_type, resource_id],
     )
     if updated.rowcount:
         return
+    insert_columns = [col for col in values if col != "id"]
+    placeholders = ", ".join("?" for _ in insert_columns)
     db.execute(
-        """
-        INSERT INTO asset_records
-          (provider, account_id, account_name, service, resource_type, resource_id, arn, name, region, data_json, discovered_at, last_seen_at, is_active)
-        VALUES ('aws', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-        """,
-        (account_id, account_name, service, resource_type, resource_id, arn, name, region, data_json, now, now),
+        f"INSERT INTO asset_records ({', '.join(insert_columns)}) VALUES ({placeholders})",
+        [values[col] for col in insert_columns],
     )
+
+
+def asset_record_columns(db: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+    return {
+        row[1]: {"type": row[2], "notnull": bool(row[3]), "default": row[4], "pk": bool(row[5])}
+        for row in db.execute("PRAGMA table_info(asset_records)").fetchall()
+    }
+
+
+def asset_record_values(columns: dict[str, dict[str, Any]], **base: Any) -> dict[str, Any]:
+    values = {
+        "provider": "aws",
+        "account_id": base["account_id"],
+        "account_name": base["account_name"],
+        "service": base["service"],
+        "resource_type": base["resource_type"],
+        "resource_id": base["resource_id"],
+        "resource_name": base["name"],
+        "arn": base["arn"],
+        "name": base["name"],
+        "region": base["region"],
+        "data_json": base["data_json"],
+        "discovered_at": base["now"],
+        "last_seen_at": base["now"],
+        "is_active": 1,
+        "created_at": base["now"],
+        "updated_at": base["now"],
+    }
+    for col, meta in columns.items():
+        if col in values or col == "id":
+            continue
+        if meta["notnull"] and meta["default"] is None:
+            values[col] = 0 if "INT" in str(meta["type"]).upper() else ""
+    return {col: val for col, val in values.items() if col in columns}
 
 
 def sync_type(
