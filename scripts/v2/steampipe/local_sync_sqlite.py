@@ -198,6 +198,13 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    migrate_schema(conn)
+
+
+def migrate_schema(conn: sqlite3.Connection) -> None:
+    sync_run_columns = {row[1] for row in conn.execute("PRAGMA table_info(inventory_sync_runs)").fetchall()}
+    if "started_at" not in sync_run_columns:
+        conn.execute("ALTER TABLE inventory_sync_runs ADD COLUMN started_at TEXT")
 
 
 def account_for(row: dict[str, Any], host: str) -> str:
@@ -354,6 +361,7 @@ def main() -> int:
     try:
         ensure_schema(db)
         summary = []
+        failed = []
         for resource_type in selected:
             if resource_type not in queries:
                 print(f"[local-sync] skip unsupported type: {resource_type}", file=sys.stderr)
@@ -364,6 +372,7 @@ def main() -> int:
                 summary.append(item)
                 print(f"[local-sync] {resource_type}: {item['rowCount']} rows")
             except Exception as exc:  # noqa: BLE001
+                failed.append({"type": resource_type, "error": str(exc)})
                 now = datetime.now(timezone.utc).isoformat()
                 with db:
                     db.execute(
@@ -376,8 +385,16 @@ def main() -> int:
                         (resource_type, now, now, str(exc)[:2000]),
                     )
                 print(f"[local-sync] {resource_type}: failed: {exc}", file=sys.stderr)
-        print(json.dumps({"status": "ok", "summary": summary}, ensure_ascii=False))
-        return 0
+        total_rows = sum(int(item["rowCount"]) for item in summary)
+        status = "failed" if failed else "ok"
+        if not failed and total_rows == 0:
+            print(
+                "[local-sync] completed, but Steampipe returned 0 rows. "
+                "Check AWS profile/SSO, account IDs, selected types, and Steampipe connection.",
+                file=sys.stderr,
+            )
+        print(json.dumps({"status": status, "summary": summary, "failed": failed}, ensure_ascii=False))
+        return 1 if failed else 0
     finally:
         db.close()
 

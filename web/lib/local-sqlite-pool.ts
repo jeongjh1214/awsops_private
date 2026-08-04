@@ -73,6 +73,7 @@ function ensureLocalAppSchema(db: PrivateSqliteDb): void {
       resource_type TEXT NOT NULL,
       account_id TEXT NOT NULL DEFAULT 'self',
       status TEXT NOT NULL DEFAULT '',
+      started_at TEXT,
       finished_at TEXT,
       row_count INTEGER,
       error TEXT,
@@ -155,6 +156,15 @@ function ensureLocalAppSchema(db: PrivateSqliteDb): void {
       captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  migrateLocalAppSchema(db);
+}
+
+function migrateLocalAppSchema(db: PrivateSqliteDb): void {
+  const syncRunColumns = selectAll<{ name: string }>(db, 'PRAGMA table_info(inventory_sync_runs)')
+    .map((column) => String(column.name));
+  if (!syncRunColumns.includes('started_at')) {
+    db.exec('ALTER TABLE inventory_sync_runs ADD COLUMN started_at TEXT');
+  }
 }
 
 function syncAssetRecords(db: PrivateSqliteDb): void {
@@ -190,6 +200,10 @@ function queryLocalAppTables<T>(
   if (accountRows) return accountRows;
 
   if (normalized.includes('from inventory_sync_runs')) {
+    if (params.length === 0) {
+      return result(selectAll(db, `SELECT resource_type, status, started_at, finished_at, row_count, error
+        FROM inventory_sync_runs ORDER BY resource_type`) as T[]);
+    }
     return result(selectAll(db, 'SELECT status, finished_at, row_count, error FROM inventory_sync_runs WHERE resource_type = ? AND account_id = ?', [params[0], 'self']) as T[]);
   }
   if (normalized.includes('from inventory_snapshots')) {
@@ -263,6 +277,10 @@ function handleInventoryQuery<T>(
   if (normalized.includes('select count(*)') && normalized.includes('resource_type in')) {
     const types = ['s3_public_access', 'security_group', 'ebs_volume', 'iam_user'];
     return result([{ n: rows.filter((row) => types.includes(row.resource_type)).length }] as T[]);
+  }
+  if (normalized.includes('select count(*)') && !normalized.includes('group by')) {
+    const type = resourceTypeFromSql(sql);
+    return result([{ n: rows.filter((row) => !type || row.resource_type === type).length }] as T[]);
   }
   if (normalized.includes("union all select 'ec2_stopped'")) {
     return result(inventorySplits(rows) as T[]);
