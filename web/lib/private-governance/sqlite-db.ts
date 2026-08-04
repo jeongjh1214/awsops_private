@@ -130,4 +130,29 @@ function ensurePrivateSqliteSchema(db: PrivateSqliteDb): void {
     CREATE INDEX IF NOT EXISTS idx_s3_governance_events_stable_key
       ON s3_governance_events(stable_key, created_at DESC);
   `);
+  migratePrivateSqliteSchema(db);
+}
+
+function migratePrivateSqliteSchema(db: PrivateSqliteDb): void {
+  ensureColumns(db, 'asset_records', {
+    account_name: "TEXT DEFAULT ''",
+    arn: "TEXT DEFAULT ''",
+    name: "TEXT DEFAULT ''",
+    region: "TEXT DEFAULT ''",
+    data_json: "TEXT NOT NULL DEFAULT '{}'",
+    discovered_at: 'TEXT',
+    last_seen_at: 'TEXT',
+    is_active: 'INTEGER NOT NULL DEFAULT 1',
+  });
+}
+
+function ensureColumns(db: PrivateSqliteDb, table: string, columns: Record<string, string>): void {
+  const existing = new Set(
+    db.prepare(`PRAGMA table_info(${table})`).all().map((column) => String(column.name)),
+  );
+  for (const [name, definition] of Object.entries(columns)) {
+    if (!existing.has(name)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+    }
+  }
 }

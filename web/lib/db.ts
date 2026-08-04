@@ -55,7 +55,7 @@ export function getPool(): PoolLike {
   return pool;
 }
 
-function shouldUseLocalSqlitePool(): boolean {
+export function shouldUseLocalSqlitePool(): boolean {
   if (process.env.AURORA_ENDPOINT || process.env.DATABASE_URL) return false;
   if (process.env.AWSOPS_LOCAL_DB_PROVIDER === 'sqlite') return true;
   if (process.env.AWSOPS_LOCAL_DB_PROVIDER === 'aurora') return false;

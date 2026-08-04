@@ -11,8 +11,12 @@ import {
 import { isAdmin } from '@/lib/admin';
 import { enqueueJob } from '@/lib/jobs';
 import { readJsonBounded, BodyTooLargeError } from '@/lib/http-body';
+import { shouldUseLocalSqlitePool } from '@/lib/db';
+import { getPrivateRuntimeConfig } from '@/lib/private-runtime-config';
+import { startLocalDiagnosisJob } from '@/lib/local-diagnosis';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET(req: Request) {
   const user = await verifyUser(req.headers.get('cookie'));
@@ -40,7 +44,7 @@ export async function POST(req: Request) {
   const tier = ['light', 'mid', 'deep'].includes(body?.tier) ? body.tier : 'mid';
   // Only the deep tier may select Opus; every other tier is pinned to Sonnet (cost guard).
   const model: DiagnosisModel = tier === 'deep' && body?.model === 'opus' ? 'opus' : 'sonnet';
-  const hostAccount = process.env.AWS_ACCOUNT_ID || '';
+  const hostAccount = process.env.AWS_ACCOUNT_ID || localHostAccountId();
   // [PR#37 review MAJOR] fail fast — an empty account would silently reach the LLM context.
   if (!hostAccount) {
     return NextResponse.json(
@@ -88,5 +92,24 @@ export async function POST(req: Request) {
     throw e;
   }
   await linkReportJob(reportId, job.job_id); // FK now satisfiable
+  if (shouldUseLocalSqlitePool() && !process.env.JOBS_QUEUE_URL) {
+    startLocalDiagnosisJob({
+      reportId,
+      jobId: job.job_id,
+      account,
+      scope,
+      tier,
+      model,
+      requestedBy: email,
+    });
+    return NextResponse.json({ job_id: job.job_id, report_id: reportId, tier, model, local: true }, { status: 202 });
+  }
   return NextResponse.json({ job_id: job.job_id, report_id: reportId, tier, model }, { status: 202 });
+}
+
+function localHostAccountId(): string {
+  if (!shouldUseLocalSqlitePool()) return '';
+  const config = getPrivateRuntimeConfig() as any;
+  const accountId = config.accounts?.find((account: any) => /^[0-9]{12}$/.test(String(account?.accountId ?? '')))?.accountId;
+  return typeof accountId === 'string' ? accountId : '';
 }

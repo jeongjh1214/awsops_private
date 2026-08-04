@@ -109,6 +109,50 @@ export async function markReportFailed(reportId: number, msg: string): Promise<v
   );
 }
 
+export async function completeLocalDiagnosisReport(reportId: number, workerJobId: string): Promise<void> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT resource_type, count(*)::int AS n FROM inventory_resources GROUP BY resource_type`,
+  );
+  const byType = Object.fromEntries(
+    rows.map((row: any) => [String(row.resource_type), Number(row.n ?? 0)]),
+  );
+  const total = Object.values(byType).reduce((sum, n) => sum + Number(n), 0);
+  const sourcesUsed = ['inventory_resources'];
+  const summary = {
+    mode: 'local-sqlite',
+    sections: 1,
+    sources_used: sourcesUsed,
+    inventory: { total, by_type: byType },
+    drift: [],
+  };
+  await pool.query(
+    `UPDATE diagnosis_reports
+        SET status = 'succeeded',
+            sources_used = $2,
+            summary = $3,
+            artifact_uri = NULL,
+            error = NULL,
+            progress = $4
+      WHERE id = $1 AND deleted_at IS NULL`,
+    [reportId, JSON.stringify(sourcesUsed), JSON.stringify(summary), JSON.stringify({
+      current: 1,
+      total: 1,
+      section: 'local_inventory',
+      phase: 'assemble',
+    })],
+  );
+  await pool.query(
+    `UPDATE worker_jobs
+        SET status = 'succeeded',
+            result = $2,
+            error = NULL,
+            updated_at = now()
+      WHERE job_id = $1`,
+    [workerJobId, JSON.stringify({ report_id: reportId, summary })],
+  );
+}
+
 // Partial metadata update — only sets the columns provided (tags-only must not clobber title).
 export async function updateReportMeta(
   id: number,

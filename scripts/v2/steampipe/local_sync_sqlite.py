@@ -205,6 +205,23 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     sync_run_columns = {row[1] for row in conn.execute("PRAGMA table_info(inventory_sync_runs)").fetchall()}
     if "started_at" not in sync_run_columns:
         conn.execute("ALTER TABLE inventory_sync_runs ADD COLUMN started_at TEXT")
+    ensure_columns(conn, "asset_records", {
+        "account_name": "TEXT DEFAULT ''",
+        "arn": "TEXT DEFAULT ''",
+        "name": "TEXT DEFAULT ''",
+        "region": "TEXT DEFAULT ''",
+        "data_json": "TEXT NOT NULL DEFAULT '{}'",
+        "discovered_at": "TEXT",
+        "last_seen_at": "TEXT",
+        "is_active": "INTEGER NOT NULL DEFAULT 1",
+    })
+
+
+def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    for name, definition in columns.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
 def account_for(row: dict[str, Any], host: str) -> str:

@@ -10,6 +10,7 @@ vi.mock('@/lib/db', () => ({
       return { rows: [{ job_id: params[0] }] }; // inserted (not a conflict)
     },
   }),
+  shouldUseLocalSqlitePool: () => false,
 }));
 
 vi.mock('@aws-sdk/client-sqs', () => ({

@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
-import { getPool } from '@/lib/db';
+import { getPool, shouldUseLocalSqlitePool } from '@/lib/db';
 
 let sqs: SQSClient | null = null;
 function getSqs(): SQSClient {
@@ -45,7 +45,8 @@ export async function enqueueJob(
   opts: EnqueueOpts = {},
 ): Promise<EnqueueResult> {
   const queueUrl = process.env.JOBS_QUEUE_URL;
-  if (!queueUrl) throw new Error('JOBS_QUEUE_URL not set (workers disabled)');
+  const localInline = shouldUseLocalSqlitePool() && !queueUrl;
+  if (!queueUrl && !localInline) throw new Error('JOBS_QUEUE_URL not set (workers disabled)');
 
   const dryRun = Boolean(opts.dryRun);
   const idempotencyKey = opts.idempotencyKey ?? null;
@@ -80,6 +81,10 @@ export async function enqueueJob(
     }
     jobId = existing.rows[0].job_id;
     status = existing.rows[0].status;
+  }
+
+  if (localInline) {
+    return { job_id: jobId, status };
   }
 
   try {
