@@ -505,6 +505,7 @@ const GROUPS: Record<string, GroupMeta> = {
   },
   'Security': {
     slug: 'security', labelKey: 'group.security', splitKeys: ['iamUserNoMfa'],
+    injected: [{ key: 's3-governance', href: '/private-governance/s3', labelKey: 'nav.s3Governance' }],
     order: ['iam_role', 'iam_user', 'iam_policy', 'waf', 'cloudtrail', 's3_public_access'],
   },
   'Monitoring': {

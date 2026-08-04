@@ -20,6 +20,7 @@ function buildCommands(): Cmd[] {
     { href: '/bedrock', label: 'Bedrock', hint: '토큰 비용' },
     { href: '/integrations', label: 'Integrations', hint: '데이터소스 · 커넥터 · 스킬' },
     { href: '/security', label: 'Security', hint: '보안 점검' },
+    { href: '/private-governance/s3', label: 'S3 개인정보 관리', hint: 'S3 거버넌스' },
     { href: '/compliance', label: 'Compliance', hint: 'CIS 벤치마크' },
   ];
   // Group overview destinations (non-singleton groups). Unique labels so they don't

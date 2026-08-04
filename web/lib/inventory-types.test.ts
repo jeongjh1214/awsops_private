@@ -158,6 +158,7 @@ describe('overview helpers + path resolver', () => {
     expect(groupForPath('/inventory/g/network')).toEqual({ slug: 'network' });
     expect(groupForPath('/inventory/alb')).toEqual({ slug: 'network', subgroupKey: 'loadBalancing' });
     expect(groupForPath('/inventory/apigatewayv2_route')).toEqual({ slug: 'network', subgroupKey: 'apiGateway' });
+    expect(groupForPath('/private-governance/s3')).toEqual({ slug: 'security' });
     expect(groupForPath('/inventory/cloudwatch_alarm')).toEqual({ slug: 'monitoring' });
     expect(groupForPath('/nonexistent')).toBeNull();
   });

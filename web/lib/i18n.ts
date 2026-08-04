@@ -41,6 +41,7 @@ const MESSAGES: Record<Lang, Dict> = {
     'nav.datasources': '데이터소스',
     'nav.integrations': '연동',
     'nav.accounts': '계정 관리',
+    'nav.s3Governance': 'S3 개인정보 관리',
     // Inventory group labels + 2-level subgroups (sidebar accordion + overview pages)
     'group.compute': '컴퓨트',
     'group.storage': '스토리지 & DB',
@@ -118,6 +119,7 @@ const MESSAGES: Record<Lang, Dict> = {
     'nav.datasources': 'Datasources',
     'nav.integrations': 'Integrations',
     'nav.accounts': 'Accounts',
+    'nav.s3Governance': 'S3 Governance',
     // Inventory group labels + 2-level subgroups (sidebar accordion + overview pages)
     'group.compute': 'Compute',
     'group.storage': 'Storage & DB',
@@ -195,6 +197,7 @@ const MESSAGES: Record<Lang, Dict> = {
     'nav.datasources': '数据源',
     'nav.integrations': '集成',
     'nav.accounts': '账号管理',
+    'nav.s3Governance': 'S3 治理',
     'group.compute': '计算',
     'group.storage': '存储 & 数据库',
     'group.network': '网络',
@@ -270,6 +273,7 @@ const MESSAGES: Record<Lang, Dict> = {
     'nav.datasources': 'データソース',
     'nav.integrations': '連携',
     'nav.accounts': 'アカウント管理',
+    'nav.s3Governance': 'S3 ガバナンス',
     'group.compute': 'コンピュート',
     'group.storage': 'ストレージ & DB',
     'group.network': 'ネットワーク',
