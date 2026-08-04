@@ -152,10 +152,30 @@ bash scripts/18-sync-steampipe-to-sqlite.sh
 ```bash
 npm --prefix web ci
 python3 -m pip install -r scripts/v2/steampipe/requirements.txt
+python3 -m pip install -r scripts/v2/workers/requirements.txt
 python3 -m pip install -r agent/requirements-private.txt
 python3 -m py_compile agent/langgraph_api.py agent/mcp_server.py agent/private_runtime/*.py
 bash -n scripts/*.sh
 npm --prefix web run build
+```
+
+## Local AI Diagnosis
+
+When `activeEnvironment` is `local`, Aurora is unset, and `JOBS_QUEUE_URL` is unset, `/api/diagnosis`
+uses the local SQLite DB and starts `scripts/v2/workers/local_diagnosis_runner.py` in the background.
+The runner reads `inventory_resources` from `data/awsops.db` and writes markdown artifacts under
+`data/diagnosis/`.
+
+Check the local diagnosis log if a report fails:
+
+```bash
+tail -f data/logs/local-diagnosis-<report-id>.log
+```
+
+You can also run the runner manually against an existing report/job row:
+
+```bash
+bash scripts/19-run-local-diagnosis.sh --db data/awsops.db --report-id 1 --job-id local-test --tier light
 ```
 
 ## Start Services

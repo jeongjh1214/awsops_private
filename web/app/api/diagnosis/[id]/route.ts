@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { verifyUser } from '@/lib/auth';
 import { getReport, canMutateReport, updateReportMeta, softDeleteReport } from '@/lib/diagnosis';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { readFile } from 'fs/promises';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +12,13 @@ export const dynamic = 'force-dynamic';
 const clean = (s: string) => s.replace(/[\u0000-\u001f\u007f]/g, '').trim();
 
 async function readArtifact(uri: string): Promise<string | null> {
+  if (uri.startsWith('file://')) {
+    const path = fileURLToPath(uri);
+    const allowed = resolve(process.cwd(), 'data/diagnosis');
+    const resolved = resolve(path);
+    if (!resolved.startsWith(`${allowed}/`)) return null;
+    return readFile(resolved, 'utf8');
+  }
   const m = uri.match(/^s3:\/\/([^/]+)\/(.+)$/);
   if (!m) return null;
   // [PR#37 review MINOR] defense-in-depth: only read keys under the diagnosis/ prefix (matches the

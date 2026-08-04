@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { verifyUser } from '@/lib/auth';
 import { getReport } from '@/lib/diagnosis';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { readFile } from 'fs/promises';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +33,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const report = await getReport(id);
   if (!report || !report.artifact_uri) {
     return NextResponse.json({ message: 'not found' }, { status: 404 });
+  }
+  if (report.artifact_uri.startsWith('file://')) {
+    if (format !== 'md') return NextResponse.json({ message: 'not found' }, { status: 404 });
+    const path = fileURLToPath(report.artifact_uri);
+    const allowed = resolve(process.cwd(), 'data/diagnosis');
+    const resolved = resolve(path);
+    if (!resolved.startsWith(`${allowed}/`)) return NextResponse.json({ message: 'not found' }, { status: 404 });
+    const bytes = await readFile(resolved);
+    return new Response(bytes, {
+      status: 200,
+      headers: {
+        'Content-Type': CONTENT_TYPE.md,
+        'Content-Disposition': `attachment; filename="awsops-diagnosis-${(await params).id}.md"`,
+      },
+    });
   }
   // artifact_uri = s3://<bucket>/diagnosis/<id>.md → derive the sibling key for the requested format.
   const m = report.artifact_uri.match(/^s3:\/\/([^/]+)\/(diagnosis\/.+)\.md$/);

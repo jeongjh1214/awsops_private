@@ -44,9 +44,10 @@ export async function POST(req: Request) {
   const tier = ['light', 'mid', 'deep'].includes(body?.tier) ? body.tier : 'mid';
   // Only the deep tier may select Opus; every other tier is pinned to Sonnet (cost guard).
   const model: DiagnosisModel = tier === 'deep' && body?.model === 'opus' ? 'opus' : 'sonnet';
+  const localMode = shouldUseLocalSqlitePool() && !process.env.JOBS_QUEUE_URL;
   const hostAccount = process.env.AWS_ACCOUNT_ID || localHostAccountId();
   // [PR#37 review MAJOR] fail fast — an empty account would silently reach the LLM context.
-  if (!hostAccount) {
+  if (!hostAccount && !localMode) {
     return NextResponse.json(
       { message: 'AWS_ACCOUNT_ID not configured on the web task' },
       { status: 503 },
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
   // v1 parity: diagnose a selected member account. Validated against the registered accounts
   // table (12-digit + enabled member) — anything else falls back to the host. The worker's
   // Aurora collectors filter by `scope`; host-credentialed live collectors degrade honestly.
-  let account = hostAccount;
+  let account = hostAccount || 'local';
   let scope = 'self';
   const requested = typeof body?.account === 'string' ? body.account.trim() : '';
   if (requested && requested !== hostAccount && /^[0-9]{12}$/.test(requested)) {
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
     throw e;
   }
   await linkReportJob(reportId, job.job_id); // FK now satisfiable
-  if (shouldUseLocalSqlitePool() && !process.env.JOBS_QUEUE_URL) {
+  if (localMode) {
     startLocalDiagnosisJob({
       reportId,
       jobId: job.job_id,
