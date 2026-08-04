@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from 'fs';
-import { dirname, isAbsolute, resolve } from 'path';
+import { basename, dirname, isAbsolute, resolve } from 'path';
 import { getPrivateRuntimeConfig, resolvePrivateRuntimeConfigPath } from '../private-runtime-config';
 
 export interface PrivateSqliteRunResult {
@@ -52,10 +52,19 @@ export function resolvePrivateSqlitePath(): string {
 
 function resolveConfigRelativePath(path: string): string {
   if (isAbsolute(path)) return path;
-  if (path === 'data' || path.startsWith('data/')) return resolve(process.cwd(), path);
+  if (path === 'data' || path.startsWith('data/')) return resolveRepoRelativeDataPath(path);
   const configPath = resolvePrivateRuntimeConfigPath();
   const baseDir = configPath ? dirname(configPath) : process.cwd();
   return resolve(baseDir, path);
+}
+
+function resolveRepoRelativeDataPath(path: string): string {
+  const configPath = resolvePrivateRuntimeConfigPath();
+  if (configPath && basename(dirname(configPath)) === 'data') {
+    return resolve(dirname(configPath), '..', path);
+  }
+  if (basename(process.cwd()) === 'web') return resolve(process.cwd(), '..', path);
+  return resolve(process.cwd(), path);
 }
 
 function loadBetterSqlite3(): BetterSqlite3Factory {
