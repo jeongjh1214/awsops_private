@@ -182,6 +182,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS asset_records (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          provider TEXT NOT NULL DEFAULT 'aws',
           account_id TEXT NOT NULL,
           account_name TEXT DEFAULT '',
           service TEXT NOT NULL,
@@ -206,6 +207,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     if "started_at" not in sync_run_columns:
         conn.execute("ALTER TABLE inventory_sync_runs ADD COLUMN started_at TEXT")
     ensure_columns(conn, "asset_records", {
+        "provider": "TEXT NOT NULL DEFAULT 'aws'",
         "account_name": "TEXT DEFAULT ''",
         "arn": "TEXT DEFAULT ''",
         "name": "TEXT DEFAULT ''",
@@ -320,9 +322,10 @@ def sync_type(
             db.execute(
                 """
                 INSERT INTO asset_records
-                  (account_id, service, resource_type, resource_id, arn, name, region, data_json, discovered_at, last_seen_at, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                  (provider, account_id, service, resource_type, resource_id, arn, name, region, data_json, discovered_at, last_seen_at, is_active)
+                VALUES ('aws', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(account_id, service, resource_type, resource_id) DO UPDATE SET
+                  provider='aws',
                   arn=excluded.arn,
                   name=excluded.name,
                   region=excluded.region,

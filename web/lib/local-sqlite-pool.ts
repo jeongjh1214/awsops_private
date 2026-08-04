@@ -219,6 +219,7 @@ function migrateLocalAppSchema(db: PrivateSqliteDb): void {
     updated_at: 'TEXT',
   });
   ensureColumns(db, 'asset_records', {
+    provider: "TEXT NOT NULL DEFAULT 'aws'",
     account_name: "TEXT DEFAULT ''",
     arn: "TEXT DEFAULT ''",
     name: "TEXT DEFAULT ''",

@@ -73,6 +73,7 @@ function ensurePrivateSqliteSchema(db: PrivateSqliteDb): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS asset_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider TEXT NOT NULL DEFAULT 'aws',
       account_id TEXT NOT NULL,
       account_name TEXT DEFAULT '',
       service TEXT NOT NULL,
@@ -135,6 +136,7 @@ function ensurePrivateSqliteSchema(db: PrivateSqliteDb): void {
 
 function migratePrivateSqliteSchema(db: PrivateSqliteDb): void {
   ensureColumns(db, 'asset_records', {
+    provider: "TEXT NOT NULL DEFAULT 'aws'",
     account_name: "TEXT DEFAULT ''",
     arn: "TEXT DEFAULT ''",
     name: "TEXT DEFAULT ''",
