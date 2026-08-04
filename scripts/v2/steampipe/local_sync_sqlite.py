@@ -215,6 +215,13 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         "last_seen_at": "TEXT",
         "is_active": "INTEGER NOT NULL DEFAULT 1",
     })
+    dedupe_asset_records(conn)
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_asset_records_identity
+          ON asset_records(account_id, service, resource_type, resource_id)
+        """
+    )
 
 
 def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
@@ -222,6 +229,19 @@ def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]
     for name, definition in columns.items():
         if name not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+
+def dedupe_asset_records(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        DELETE FROM asset_records
+         WHERE id NOT IN (
+           SELECT MAX(id)
+             FROM asset_records
+            GROUP BY account_id, service, resource_type, resource_id
+         )
+        """
+    )
 
 
 def account_for(row: dict[str, Any], host: str) -> str:

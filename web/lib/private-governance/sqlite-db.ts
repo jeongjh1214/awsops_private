@@ -144,6 +144,16 @@ function migratePrivateSqliteSchema(db: PrivateSqliteDb): void {
     last_seen_at: 'TEXT',
     is_active: 'INTEGER NOT NULL DEFAULT 1',
   });
+  db.exec(`
+    DELETE FROM asset_records
+     WHERE id NOT IN (
+       SELECT MAX(id)
+         FROM asset_records
+        GROUP BY account_id, service, resource_type, resource_id
+     );
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_asset_records_identity
+      ON asset_records(account_id, service, resource_type, resource_id);
+  `);
 }
 
 function ensureColumns(db: PrivateSqliteDb, table: string, columns: Record<string, string>): void {
