@@ -20,6 +20,7 @@ export async function* invokeLocalPrivateAgentStream(
       accountId: input.accountId,
       route: input.gateway,
       model: config.agent.modelId,
+      extraContext: input.extraContext,
     }),
     signal: opts.abortSignal,
   });

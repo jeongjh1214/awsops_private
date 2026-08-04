@@ -22,6 +22,7 @@ import { listConfiguredSchemas, renderSchemaForPrompt } from '@/lib/datasource-s
 import { listDatasources } from '@/lib/datasources';
 import { readJsonBounded, BodyTooLargeError } from '@/lib/http-body';
 import { getAgentSpace } from '@/lib/agent-space';
+import { answerLocalInventoryPrompt } from '@/lib/local-inventory-assistant';
 import { randomUUID } from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -252,13 +253,16 @@ export async function POST(request: Request) {
   const useAssistant = hybridOn && !unavailablePin
     && ((!explicitPin && isProductHelpIntent(prompt)) || (inactiveSection != null && !inactiveWasPinned));
   const messages: ChatMsg[] = [...history, { role: 'user', content: prompt }];
+  const localInventoryAnswer = await answerLocalInventoryPrompt(prompt, lang).catch(() => null);
   // Thread persistence: adopt a well-formed client threadId, else mint one. Ownership is
   // enforced at write time by chat-store's owner-guarded upsert (forged ids just drop).
   const threadId = (typeof body.threadId === 'string' && THREAD_RE.test(body.threadId)) ? body.threadId : randomUUID();
   const via = doFanout ? `multi:${fanGateways.join('+')}` : undefined;
-  const recordGateway = useAssistant ? 'assistant' : spec.gateway;
+  const recordGateway = localInventoryAnswer ? 'local-inventory' : useAssistant ? 'assistant' : spec.gateway;
   const exchangeMeta = useAssistant
     ? { assistant: true }
+    : localInventoryAnswer
+      ? { localInventory: true, tools: ['sqlite_inventory'] }
     : route
       ? { ranked: route.ranked, method: route.method, ...(via ? { via, routes: fanGateways } : {}), ...(spec.tier === 'custom' ? { customAgent: spec.agentName } : {}) }
       : (spec.tier === 'custom' ? { customAgent: spec.agentName } : undefined);
@@ -299,10 +303,11 @@ export async function POST(request: Request) {
       controller.enqueue(enc.encode(': heartbeat\n\n')); // open immediately (CloudFront/ALB keepalive)
       // meta is ALWAYS emitted, on every path incl. inactive/fallback (spec §6).
       const meta = {
-        gateway: useAssistant ? 'assistant' : spec.gateway,
-        agentName: useAssistant ? 'AWSops Assistant' : spec.agentName,
+        gateway: localInventoryAnswer ? 'local-inventory' : useAssistant ? 'assistant' : spec.gateway,
+        agentName: localInventoryAnswer ? 'SQLite Inventory' : useAssistant ? 'AWSops Assistant' : spec.agentName,
         tier: spec.tier, skillHashes: spec.skillHashes, threadId,
         ...(useAssistant ? { assistant: true } : {}),
+        ...(localInventoryAnswer ? { localInventory: true } : {}),
         // chips/via are suppressed on the assistant path (no section hand-off for a product answer).
         ...(route && !useAssistant ? { ranked: route.ranked, method: route.method } : {}),
         // ADR-044: emit via/routes IMMEDIATELY from the attempt list (gate MINOR — never wait for
@@ -318,6 +323,22 @@ export async function POST(request: Request) {
         const guide = chatMsg.unavailablePin(lang, name);
         controller.enqueue(enc.encode(`data: ${JSON.stringify({ delta: guide })}\n\n`));
         record(guide);
+        controller.enqueue(enc.encode('data: [DONE]\n\n'));
+        controller.close();
+        return;
+      }
+      if (localInventoryAnswer) {
+        for (const c of chunk(localInventoryAnswer)) {
+          if (request.signal.aborted) break;
+          controller.enqueue(enc.encode(`data: ${JSON.stringify({ delta: c })}\n\n`));
+          if (TYPE_DELAY_MS) await new Promise((r) => setTimeout(r, TYPE_DELAY_MS));
+        }
+        const footerMeta = { elapsedMs: 0, tools: ['sqlite_inventory'] };
+        controller.enqueue(enc.encode(`event: meta\ndata: ${JSON.stringify(footerMeta)}\n\n`));
+        if (!request.signal.aborted) {
+          record(localInventoryAnswer, footerMeta);
+          void recordChatInvoke({ gateway: 'local-inventory', userSub: user.sub, elapsedMs: 0, success: true, toolCount: 1 });
+        }
         controller.enqueue(enc.encode('data: [DONE]\n\n'));
         controller.close();
         return;
