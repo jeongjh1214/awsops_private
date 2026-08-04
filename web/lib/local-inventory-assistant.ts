@@ -85,18 +85,24 @@ function renderInventoryAnswer(type: string, rows: InventoryRow[], lang: ChatLan
   const byKind = type === 'ec2'
     ? topCounts(parsed, (row) => stringValue(row.data.instance_type))
     : [];
+  const staleNote = latest ? freshnessNote(latest) : '';
 
   const lines = [
-    `SQLite 인벤토리 기준 **${label} 리소스는 총 ${rows.length}개**입니다.`,
-    latest ? `최신 수집 시각: \`${latest}\`` : '',
+    `## ${label} 리소스 현황`,
     '',
+    `현재 SQLite 인벤토리 기준으로 **${label} 리소스는 총 ${rows.length}개**입니다.`,
+    latest ? `마지막 수집 시각은 \`${latest}\`입니다.${staleNote ? ` ${staleNote}` : ''}` : '',
+    '',
+    '### 한눈에 보기',
+    renderOverviewBullets(type, parsed, byState, byRegion, byAccount, byKind),
+    '',
+    '### 분포',
     renderCountSection('상태별', byState),
     renderCountSection('리전별', byRegion),
     byAccount.length > 1 ? renderCountSection('계정별', byAccount) : '',
     byKind.length ? renderCountSection('인스턴스 타입별', byKind) : '',
     '',
-    '상위 항목:',
-    '',
+    '### 주요 리소스',
     renderMarkdownTable(parsed.slice(0, 10).map((row) => ({
       Name: resourceName(row),
       ID: row.resource_id,
@@ -105,6 +111,9 @@ function renderInventoryAnswer(type: string, rows: InventoryRow[], lang: ChatLan
       Region: row.region || '-',
       Account: row.account_id || '-',
     }))),
+    '',
+    '### 운영 체크포인트',
+    renderOperationalChecks(type, parsed),
   ].filter(Boolean);
 
   return lines.join('\n');
@@ -135,8 +144,59 @@ function renderEnglishInventoryAnswer(type: string, rows: InventoryRow[]): strin
 function renderCountSection(title: string, counts: [string, number][]): string {
   if (!counts.length) return '';
   return [
-    `${title}:`,
+    `**${title}**`,
     ...counts.slice(0, 8).map(([name, count]) => `- ${name}: ${count}`),
+  ].join('\n');
+}
+
+function renderOverviewBullets(
+  type: string,
+  rows: (InventoryRow & { data: Record<string, unknown> })[],
+  byState: [string, number][],
+  byRegion: [string, number][],
+  byAccount: [string, number][],
+  byKind: [string, number][],
+): string {
+  const dominantState = byState[0];
+  const dominantRegion = byRegion[0];
+  const accountScope = byAccount.length > 1 ? `${byAccount.length}개 계정` : `계정 ${byAccount[0]?.[0] ?? '-'}`;
+  const lines = [
+    `- 범위: ${accountScope}, ${byRegion.length}개 리전`,
+    dominantRegion ? `- 가장 많은 리전: ${dominantRegion[0]} (${dominantRegion[1]}개)` : '',
+    dominantState ? `- 가장 많은 상태: ${dominantState[0]} (${dominantState[1]}개)` : '',
+  ];
+
+  if (type === 'ec2') {
+    const running = countState(rows, 'running');
+    const stopped = countState(rows, 'stopped');
+    lines.push(`- 실행 중/중지: running ${running}개, stopped ${stopped}개`);
+    if (byKind[0]) lines.push(`- 가장 많은 인스턴스 타입: ${byKind[0][0]} (${byKind[0][1]}개)`);
+  }
+
+  return lines.filter(Boolean).join('\n');
+}
+
+function renderOperationalChecks(type: string, rows: (InventoryRow & { data: Record<string, unknown> })[]): string {
+  if (type === 'ec2') {
+    const stopped = rows.filter((row) => stringValue(row.data.instance_state).toLowerCase() === 'stopped');
+    const unnamed = rows.filter((row) => resourceName(row) === row.resource_id);
+    return [
+      stopped.length ? `- 중지된 EC2 ${stopped.length}개는 장기 미사용/정리 대상인지 확인해 볼 만합니다.` : '- 중지 상태 EC2는 현재 표본에서 보이지 않습니다.',
+      unnamed.length ? `- Name 태그가 비어 보이는 EC2가 ${unnamed.length}개 있습니다. 소유자 식별을 위해 태그 보강을 권장합니다.` : '- 주요 EC2에는 식별 가능한 이름이 있습니다.',
+      '- 비용/보안까지 이어서 보려면 “중지된 EC2 중 정리 후보 알려줘” 또는 “EC2 보안그룹 노출도 같이 봐줘”처럼 물어보면 됩니다.',
+    ].join('\n');
+  }
+
+  if (type === 's3') {
+    return [
+      '- 공개 접근, 암호화, 로깅 여부는 S3 상세 인벤토리와 S3 개인정보 관리 메뉴에서 함께 확인하는 것이 좋습니다.',
+      '- 개인정보 포함 가능성이 있는 버킷은 보존기간 인지/적용 여부까지 기록해 두는 흐름을 권장합니다.',
+    ].join('\n');
+  }
+
+  return [
+    '- 상태가 비정상인 항목과 태그/소유자 누락 항목을 우선 확인하는 것이 좋습니다.',
+    '- 필요한 경우 리소스 타입별 상세 메뉴에서 필터를 걸어 원본 필드를 확인할 수 있습니다.',
   ].join('\n');
 }
 
@@ -172,6 +232,18 @@ function parseData(value: InventoryRow['data']): Record<string, unknown> {
 
 function latestCapturedAt(rows: InventoryRow[]): string {
   return rows.map((row) => row.captured_at).filter((value): value is string => !!value).sort().at(-1) ?? '';
+}
+
+function freshnessNote(value: string): string {
+  const captured = new Date(value).getTime();
+  if (!Number.isFinite(captured)) return '';
+  const ageHours = Math.floor((Date.now() - captured) / 3_600_000);
+  if (ageHours < 0 || ageHours < 24) return '';
+  return `수집 후 약 ${Math.floor(ageHours / 24)}일이 지나 최신성이 낮을 수 있습니다.`;
+}
+
+function countState(rows: (InventoryRow & { data: Record<string, unknown> })[], state: string): number {
+  return rows.filter((row) => stringValue(row.data.instance_state ?? row.data.state ?? row.data.status).toLowerCase() === state).length;
 }
 
 function resourceName(row: InventoryRow & { data: Record<string, unknown> }): string {
