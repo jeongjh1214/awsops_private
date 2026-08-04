@@ -82,7 +82,7 @@ export default function S3GovernancePage() {
   const [rows, setRows] = useState<S3GovernanceRow[]>([]);
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState('');
-  const [active, setActive] = useState('true');
+  const [active, setActive] = useState('');
   const [containsPersonalInfo, setContainsPersonalInfo] = useState('');
   const [retentionApplied, setRetentionApplied] = useState('');
   const [loading, setLoading] = useState(true);
@@ -101,11 +101,11 @@ export default function S3GovernancePage() {
     return p;
   }, [active, containsPersonalInfo, query, retentionApplied]);
 
-  const load = useCallback(async () => {
+  const loadList = useCallback(async (nextParams: URLSearchParams) => {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`/api/private-governance/s3?${params.toString()}`);
+      const res = await fetch(`/api/private-governance/s3?${nextParams.toString()}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
       setRows(Array.isArray(data.rows) ? data.rows : []);
@@ -115,7 +115,9 @@ export default function S3GovernancePage() {
     } finally {
       setLoading(false);
     }
-  }, [params]);
+  }, []);
+
+  const load = useCallback(() => loadList(params), [loadList, params]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -167,7 +169,11 @@ export default function S3GovernancePage() {
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
       const s = data.summary ?? {};
       setMessage(`인벤토리 반영 완료: 신규 ${s.created ?? 0}개, 기존 ${s.skipped ?? 0}개`);
-      await load();
+      setQuery('');
+      setActive('');
+      setContainsPersonalInfo('');
+      setRetentionApplied('');
+      await loadList(new URLSearchParams({ limit: '1000' }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -260,6 +266,8 @@ export default function S3GovernancePage() {
             </div>
             {loading ? (
               <div className="p-8 text-center text-[13px] text-ink-400">로딩 중...</div>
+            ) : error ? (
+              <div className="p-8 text-center text-[13px] text-negative-600">로드 실패: {error}</div>
             ) : (
               <DataTable
                 columns={columns}
