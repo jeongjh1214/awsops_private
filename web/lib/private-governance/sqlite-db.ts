@@ -52,6 +52,7 @@ export function resolvePrivateSqlitePath(): string {
 
 function resolveConfigRelativePath(path: string): string {
   if (isAbsolute(path)) return path;
+  if (path === 'data' || path.startsWith('data/')) return resolve(process.cwd(), path);
   const configPath = resolvePrivateRuntimeConfigPath();
   const baseDir = configPath ? dirname(configPath) : process.cwd();
   return resolve(baseDir, path);

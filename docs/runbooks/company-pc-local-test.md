@@ -127,10 +127,31 @@ Alternatively, set it before starting Next.js:
 export STEAMPIPE_PASSWORD='replace-with-steampipe-service-password'
 ```
 
+Sync Steampipe inventory into the local SQLite DB:
+
+```bash
+bash scripts/18-sync-steampipe-to-sqlite.sh
+```
+
+By default this syncs the resource types from `assetInventory.supportedResourceTypes`, mapping
+`ec2_instance` to `ec2` and `s3_bucket` to `s3`. To choose explicitly:
+
+```bash
+bash scripts/18-sync-steampipe-to-sqlite.sh --types ec2,s3,rds
+```
+
+If you changed the Steampipe config, restart Steampipe before syncing:
+
+```bash
+bash scripts/16-start-steampipe-private.sh
+bash scripts/18-sync-steampipe-to-sqlite.sh
+```
+
 ## Install And Build
 
 ```bash
 npm --prefix web ci
+python3 -m pip install -r scripts/v2/steampipe/requirements.txt
 python3 -m pip install -r agent/requirements-private.txt
 python3 -m py_compile agent/langgraph_api.py agent/mcp_server.py agent/private_runtime/*.py
 bash -n scripts/*.sh
