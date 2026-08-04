@@ -271,6 +271,56 @@ def display_name(row: dict[str, Any], resource_id: str) -> str:
     return str(row.get("name") or tag_name or resource_id)
 
 
+def account_name_for(config: dict[str, Any], account_id: str) -> str:
+    if account_id == "self":
+        host = host_account_id(config)
+        match = next((item for item in config.get("accounts") or [] if str(item.get("accountId") or "") == host), None)
+    else:
+        match = next((item for item in config.get("accounts") or [] if str(item.get("accountId") or "") == account_id), None)
+    return str((match or {}).get("alias") or (match or {}).get("name") or "")
+
+
+def upsert_asset_record(
+    db: sqlite3.Connection,
+    *,
+    account_id: str,
+    account_name: str,
+    service: str,
+    resource_type: str,
+    resource_id: str,
+    arn: str,
+    name: str,
+    region: str,
+    data_json: str,
+    now: str,
+) -> None:
+    updated = db.execute(
+        """
+        UPDATE asset_records
+           SET provider='aws',
+               account_name=?,
+               arn=?,
+               name=?,
+               region=?,
+               data_json=?,
+               last_seen_at=?,
+               is_active=1
+         WHERE account_id=? AND service=? AND resource_type=? AND resource_id=?
+        """,
+        (account_name, arn, name, region, data_json, now, account_id, service, resource_type, resource_id),
+    )
+    if updated.rowcount:
+        return
+    db.execute(
+        """
+        INSERT INTO asset_records
+          (provider, account_id, account_name, service, resource_type, resource_id, arn, name, region, data_json, discovered_at, last_seen_at, is_active)
+        VALUES ('aws', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        """,
+        (account_id, account_name, service, resource_type, resource_id, arn, name, region, data_json, now, now),
+    )
+
+
 def sync_type(
     db: sqlite3.Connection,
     config: dict[str, Any],
@@ -310,6 +360,7 @@ def sync_type(
             data_json = json.dumps(row, default=str, ensure_ascii=False)
             arn = str(row.get("arn") or row.get("cluster_arn") or row.get("transit_gateway_arn") or "")
             name = display_name(row, resource_id)
+            account_name = account_name_for(config, account_id)
 
             db.execute(
                 """
@@ -319,21 +370,18 @@ def sync_type(
                 """,
                 (resource_id, region, account_id, resource_type, data_json, now),
             )
-            db.execute(
-                """
-                INSERT INTO asset_records
-                  (provider, account_id, service, resource_type, resource_id, arn, name, region, data_json, discovered_at, last_seen_at, is_active)
-                VALUES ('aws', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-                ON CONFLICT(account_id, service, resource_type, resource_id) DO UPDATE SET
-                  provider='aws',
-                  arn=excluded.arn,
-                  name=excluded.name,
-                  region=excluded.region,
-                  data_json=excluded.data_json,
-                  last_seen_at=excluded.last_seen_at,
-                  is_active=1
-                """,
-                (account_id, service, resource_type, resource_id, arn, name, region, data_json, now, now),
+            upsert_asset_record(
+                db,
+                account_id=account_id,
+                account_name=account_name,
+                service=service,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                arn=arn,
+                name=name,
+                region=region,
+                data_json=data_json,
+                now=now,
             )
 
         db.execute(
